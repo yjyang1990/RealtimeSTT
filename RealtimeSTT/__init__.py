@@ -1,3 +1,36 @@
-from .audio_recorder import AudioToTextRecorder
-from .audio_recorder_client import AudioToTextRecorderClient
-from .audio_input import AudioInput
+__all__ = [
+    "AudioToTextRecorder",
+    "AudioToTextRecorderClient",
+    "AudioInput",
+    "RealtimeSpeechBoundaryDetector",
+    "SpeechBoundaryEvent",
+    "SpeechBoundaryResult",
+]
+
+
+def __getattr__(name):
+    if name == "AudioToTextRecorder":
+        from .audio_recorder import AudioToTextRecorder
+
+        return AudioToTextRecorder
+    if name == "AudioToTextRecorderClient":
+        from .audio_recorder_client import AudioToTextRecorderClient
+
+        return AudioToTextRecorderClient
+    if name == "AudioInput":
+        from .audio_input import AudioInput
+
+        return AudioInput
+    if name == "RealtimeSpeechBoundaryDetector":
+        from .realtime_boundary_detector import RealtimeSpeechBoundaryDetector
+
+        return RealtimeSpeechBoundaryDetector
+    if name == "SpeechBoundaryEvent":
+        from .realtime_boundary_detector import SpeechBoundaryEvent
+
+        return SpeechBoundaryEvent
+    if name == "SpeechBoundaryResult":
+        from .realtime_boundary_detector import SpeechBoundaryResult
+
+        return SpeechBoundaryResult
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

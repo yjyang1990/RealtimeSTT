@@ -14,14 +14,21 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="realtimestt",
-    version="0.3.104",
+    version="0.3.105",
     author="Kolja Beigel",
     author_email="kolja.beigel@web.de",
     description="A fast Voice Activity Detection and Transcription System",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/KoljaB/RealTimeSTT",
-    packages=setuptools.find_packages(include=["RealtimeSTT", "RealtimeSTT_server"]),
+    packages=setuptools.find_packages(
+        include=[
+            "RealtimeSTT",
+            "RealtimeSTT.*",
+            "RealtimeSTT_server",
+            "RealtimeSTT_server.*",
+        ]
+    ),
     # classifiers=[
     #     "Programming Language :: Python :: 3",
     #     "Operating System :: OS Independent",
