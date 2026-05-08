@@ -4,6 +4,8 @@ batch/
 test_env/
 tests_private/
 docs_private/
+dev-log/
+roadmap/
 env_realtimestt/
 example_rvc/assets/
 server/
