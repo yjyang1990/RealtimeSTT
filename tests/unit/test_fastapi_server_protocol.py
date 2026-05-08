@@ -168,6 +168,50 @@ class FastAPIServerProtocolTests(unittest.TestCase):
         self.assertTrue(settings.use_main_model_for_realtime)
         self.assertFalse(settings.model_warmup)
 
+    def test_wake_word_settings_parse_from_cli(self):
+        args = parse_args([
+            "--wakeword-backend",
+            "pvporcupine",
+            "--wake-words",
+            "jarvis",
+            "--wake-words-sensitivity",
+            "0.7",
+            "--wake-word-timeout",
+            "3.25",
+            "--wake-word-buffer-duration",
+            "0.2",
+            "--wake-word-followup-window",
+            "5",
+        ])
+
+        settings = settings_from_args(args)
+
+        self.assertTrue(settings.wake_word_enabled())
+        self.assertEqual(settings.wakeword_backend, "pvporcupine")
+        self.assertEqual(settings.wake_words, "jarvis")
+        self.assertEqual(settings.wake_words_sensitivity, 0.7)
+        self.assertEqual(settings.wake_word_timeout, 3.25)
+        self.assertEqual(settings.wake_word_buffer_duration, 0.2)
+        self.assertEqual(settings.wake_word_followup_window, 5.0)
+        self.assertTrue(settings.public_dict()["wake_word_enabled"])
+
+    def test_runtime_settings_update_distinguishes_safe_and_startup_only_fields(self):
+        service = RealtimeSTTService(ServerSettings(max_sessions=1), ConnectionManager())
+
+        result = service.update_settings({
+            "max_sessions": 3,
+            "wake_words": "jarvis",
+            "transcription_engine": "moonshine",
+            "unknown_setting": 1,
+        })
+
+        self.assertEqual(service.settings.max_sessions, 3)
+        self.assertEqual(service.settings.wake_words, "jarvis")
+        self.assertEqual(result["applied"]["max_sessions"]["appliesTo"], "active_sessions")
+        self.assertEqual(result["applied"]["wake_words"]["appliesTo"], "new_sessions")
+        self.assertEqual(result["rejected"]["transcription_engine"]["reason"], "startup_only")
+        self.assertEqual(result["rejected"]["unknown_setting"]["reason"], "unknown")
+
     def test_packet_to_server_samples_accepts_valid_pcm_packet(self):
         service = RealtimeSTTService(ServerSettings(audio_queue_size=1), ConnectionManager())
         packet = decode_audio_packet(encode_audio_packet(

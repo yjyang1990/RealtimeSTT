@@ -143,7 +143,7 @@
 
     .side {
       display: grid;
-      grid-template-rows: auto auto 1fr;
+      grid-template-rows: auto auto minmax(0, 1fr);
       gap: 18px;
       padding: 24px;
       border-right: 1px solid var(--line);
@@ -232,7 +232,7 @@
 
     .history-legend {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 6px;
       padding: 10px 12px;
       border-top: 1px solid var(--line);
@@ -258,6 +258,7 @@
     }
 
     .history-legend .mic { background: var(--cyan); }
+    .history-legend .wake { background: var(--amber); }
     .history-legend .vad { background: var(--green); }
     .history-legend .rec { background: var(--red); }
     .history-legend .asr { background: var(--violet); }
@@ -328,9 +329,24 @@
       font-variant-numeric: tabular-nums;
     }
 
+    .event strong {
+      display: block;
+      color: var(--soft);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .event small {
+      display: block;
+      margin-top: 2px;
+      color: #7f8a96;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
     .main {
       display: grid;
-      grid-template-rows: auto 1fr;
+      grid-template-rows: auto auto 1fr;
       min-width: 0;
       min-height: 0;
       background: #0f1115;
@@ -358,10 +374,102 @@
       font-size: 13px;
     }
 
+    .state-rail {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 12px;
+    }
+
+    .state-step {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 28px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #15191f;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .state-step::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #5f6b77;
+    }
+
+    .state-step.active {
+      border-color: rgba(90, 215, 255, 0.46);
+      color: #e8f9ff;
+      background: #13202a;
+    }
+
+    .state-step.active::before {
+      background: var(--cyan);
+      box-shadow: 0 0 0 3px rgba(90, 215, 255, 0.12);
+    }
+
+    .state-step.wait.active {
+      border-color: rgba(241,189,90,0.46);
+      color: #fff4dd;
+      background: #241d10;
+    }
+
+    .state-step.wait.active::before {
+      background: var(--amber);
+      box-shadow: 0 0 0 3px rgba(241,189,90,0.14);
+    }
+
+    .state-step.record.active {
+      border-color: rgba(255,107,107,0.52);
+      color: #fff0f0;
+      background: #26161a;
+    }
+
+    .state-step.record.active::before {
+      background: var(--red);
+      box-shadow: 0 0 0 3px rgba(255,107,107,0.16);
+    }
+
+    .state-step.disabled {
+      opacity: 0.45;
+    }
+
     .transcript-actions {
       display: flex;
       gap: 10px;
       align-items: center;
+    }
+
+    .config-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(140px, 1fr));
+      gap: 10px 18px;
+      padding: 12px 30px;
+      border-bottom: 1px solid var(--line);
+      background: #11151a;
+      min-width: 0;
+    }
+
+    .config-strip .model-line {
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .config-strip .model-line label {
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .config-strip .model-line span {
+      font-size: 12px;
     }
 
     .secondary {
@@ -446,6 +554,26 @@
       white-space: pre-wrap;
     }
 
+    .segment-details {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.3;
+    }
+
+    .segment-details span {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.025);
+      white-space: nowrap;
+    }
+
     .segment.interim .segment-text {
       color: #d9f6ff;
     }
@@ -488,6 +616,7 @@
       .side { border-right: 0; border-bottom: 1px solid var(--line); }
       .main { min-height: 70vh; }
       .transcript-head { padding: 20px 18px 16px; align-items: flex-start; flex-direction: column; }
+      .config-strip { padding: 12px 18px; grid-template-columns: 1fr 1fr; }
       .transcript-wrap { padding: 18px; }
       .segment-text { font-size: 18px; }
     }
@@ -539,6 +668,7 @@
           <canvas id="scope" width="640" height="440"></canvas>
           <div class="history-legend" aria-label="History legend">
             <span><i class="mic"></i>Mic</span>
+            <span><i class="wake"></i>Wake</span>
             <span><i class="vad"></i>VAD</span>
             <span><i class="rec"></i>Rec</span>
             <span><i class="asr"></i>ASR</span>
@@ -550,17 +680,6 @@
           </div>
         </section>
 
-        <section class="panel model-panel" aria-label="Server configuration">
-          <div class="model-line"><label>Profile</label><span id="tuningProfile">--</span></div>
-          <div class="model-line"><label>Final</label><span id="finalModel">--</span></div>
-          <div class="model-line"><label>Realtime</label><span id="realtimeModel">--</span></div>
-          <div class="model-line"><label>Engine</label><span id="engineName">--</span></div>
-          <div class="model-line"><label>Device</label><span id="deviceName">--</span></div>
-          <div class="model-line"><label>Cadence</label><span id="cadenceInfo">--</span></div>
-          <div class="model-line"><label>VAD</label><span id="vadInfo">--</span></div>
-          <div class="model-line"><label>Decode</label><span id="decodeInfo">--</span></div>
-        </section>
-
         <div id="eventLog" class="event-log" aria-label="Event log"></div>
       </aside>
 
@@ -569,6 +688,12 @@
           <div class="transcript-title">
             <h2>Transcript</h2>
             <p id="subtitle">Ready for live microphone input.</p>
+            <div class="state-rail" aria-label="Session state">
+              <span id="wakeStep" class="state-step wait disabled">Wake</span>
+              <span id="voiceStep" class="state-step wait">Voice</span>
+              <span id="recordStep" class="state-step record">Recording</span>
+              <span id="asrStep" class="state-step">ASR</span>
+            </div>
           </div>
           <div class="transcript-actions">
             <button id="copyButton" class="secondary" type="button">
@@ -581,6 +706,17 @@
             </button>
           </div>
         </div>
+        <section class="config-strip" aria-label="Server configuration">
+          <div class="model-line"><label>Profile</label><span id="tuningProfile">--</span></div>
+          <div class="model-line"><label>Final</label><span id="finalModel">--</span></div>
+          <div class="model-line"><label>Realtime</label><span id="realtimeModel">--</span></div>
+          <div class="model-line"><label>Engine</label><span id="engineName">--</span></div>
+          <div class="model-line"><label>Device</label><span id="deviceName">--</span></div>
+          <div class="model-line"><label>Cadence</label><span id="cadenceInfo">--</span></div>
+          <div class="model-line"><label>VAD</label><span id="vadInfo">--</span></div>
+          <div class="model-line"><label>Wake</label><span id="wakeInfo">--</span></div>
+          <div class="model-line"><label>Decode</label><span id="decodeInfo">--</span></div>
+        </section>
         <div id="transcriptWrap" class="transcript-wrap">
           <div id="transcript" class="transcript">
             <div class="empty"><div><strong>No transcript yet</strong><span>Start the stream and speak.</span></div></div>
@@ -604,6 +740,10 @@
       transcript: document.getElementById("transcript"),
       transcriptWrap: document.getElementById("transcriptWrap"),
       subtitle: document.getElementById("subtitle"),
+      wakeStep: document.getElementById("wakeStep"),
+      voiceStep: document.getElementById("voiceStep"),
+      recordStep: document.getElementById("recordStep"),
+      asrStep: document.getElementById("asrStep"),
       eventLog: document.getElementById("eventLog"),
       scope: document.getElementById("scope"),
       levelNumber: document.getElementById("levelNumber"),
@@ -616,6 +756,7 @@
       deviceName: document.getElementById("deviceName"),
       cadenceInfo: document.getElementById("cadenceInfo"),
       vadInfo: document.getElementById("vadInfo"),
+      wakeInfo: document.getElementById("wakeInfo"),
       decodeInfo: document.getElementById("decodeInfo")
     };
 
@@ -643,6 +784,8 @@
       clientSpeechActive: false,
       clientSpeechLastAboveAt: 0,
       lastServerState: null,
+      wakeEnabled: false,
+      timelineEvents: [],
       segments: [],
       lastPingAt: 0
     };
@@ -660,16 +803,33 @@
       return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     }
 
-    function addEvent(text) {
+    function formatWallTime(timestamp) {
+      const number = Number(timestamp);
+      if (!Number.isFinite(number)) return nowTime();
+      return new Date(number * 1000).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+    }
+
+    function addEvent(text, detail, timestamp) {
       const row = document.createElement("div");
       row.className = "event";
       const time = document.createElement("time");
-      time.textContent = nowTime();
+      time.textContent = formatWallTime(timestamp);
       const body = document.createElement("span");
-      body.textContent = text;
+      const title = document.createElement("strong");
+      title.textContent = text;
+      body.append(title);
+      if (detail) {
+        const small = document.createElement("small");
+        small.textContent = detail;
+        body.append(small);
+      }
       row.append(time, body);
       ui.eventLog.prepend(row);
-      while (ui.eventLog.children.length > 12) ui.eventLog.lastChild.remove();
+      while (ui.eventLog.children.length > 30) ui.eventLog.lastChild.remove();
     }
 
     function setServerState(text, mode) {
@@ -677,9 +837,47 @@
       ui.serverDot.className = "dot " + (mode || "wait");
     }
 
-    function setRecordState(text, live) {
+    function setRecordState(text, mode) {
       ui.recordState.textContent = text;
-      ui.recordDot.className = "dot " + (live ? "live" : "");
+      let className = "";
+      if (mode === true) className = "live";
+      else if (typeof mode === "string") className = mode;
+      ui.recordDot.className = "dot " + className;
+    }
+
+    function stateLabel(serverState) {
+      const labels = {
+        idle: "Idle",
+        listening: "Waiting for voice",
+        voice: "Voice detected",
+        silence: "Silence",
+        wakeword_wait: "Waiting for wake word",
+        wakeword_detected: "Waiting for voice",
+        wakeword_timeout: "Wake word timeout",
+        recording: "Recording",
+        transcribing: "Transcribing",
+        closed: "Closed"
+      };
+      return labels[serverState] || String(serverState || "Idle");
+    }
+
+    function stateTone(serverState) {
+      if (serverState === "recording" || serverState === "transcribing" || serverState === "voice") return "live";
+      if (serverState === "wakeword_wait" || serverState === "wakeword_detected" || serverState === "listening") return "wait";
+      return "";
+    }
+
+    function updateStateRail(serverState) {
+      const stateName = serverState || state.lastServerState || "idle";
+      const wakeActive = stateName === "wakeword_wait" || stateName === "wakeword_timeout";
+      const voiceActive = stateName === "listening" || stateName === "voice" || stateName === "silence" || stateName === "wakeword_detected";
+      const recordActive = stateName === "recording";
+      const asrActive = stateName === "transcribing";
+
+      ui.wakeStep.className = "state-step wait" + (state.wakeEnabled ? "" : " disabled") + (wakeActive ? " active" : "");
+      ui.voiceStep.className = "state-step wait" + (voiceActive ? " active" : "");
+      ui.recordStep.className = "state-step record" + (recordActive ? " active" : "");
+      ui.asrStep.className = "state-step" + (asrActive ? " active" : "");
     }
 
     function levelToDb(level) {
@@ -717,6 +915,9 @@
         listening: "listen",
         voice: "voice",
         silence: "sil",
+        wakeword_wait: "wake",
+        wakeword_detected: "wake+",
+        wakeword_timeout: "wake!",
         recording: "rec",
         transcribing: "asr",
         closed: "close"
@@ -810,12 +1011,17 @@
       } else if (message.type === "status") {
         ui.queueDepth.textContent = String(message.queueDepth || 0);
         if (message.state) {
-          ui.subtitle.textContent = "Server state: " + message.state;
-          setRecordState(message.state, state.streaming || message.state === "recording" || message.state === "voice");
+          const label = stateLabel(message.state);
+          ui.subtitle.textContent = label;
+          setRecordState(label, stateTone(message.state));
+          updateStateRail(message.state);
           markServerState(message.state);
         }
+      } else if (message.type === "timeline") {
+        addTimelineEvent(message);
       } else if (message.type === "realtime") {
         upsertSegment(message.segmentId, message.displayText || message.text, false, {
+          segment: message.segment || null,
           rawText: message.rawText || message.text || "",
           displayText: message.displayText || message.text || "",
           stableText: message.stableText || message.committedStableText || "",
@@ -832,10 +1038,11 @@
         });
         addHistoryEvent("realtime", "rt", performance.now(), 1200);
       } else if (message.type === "final") {
-        upsertSegment(message.segmentId, message.text, true);
+        upsertSegment(message.segmentId, message.text, true, { segment: message.segment || null });
         addHistoryEvent("final", "final");
       } else if (message.type === "clear") {
         state.segments = [];
+        state.timelineEvents = [];
         renderTranscript();
         addEvent("Transcript cleared");
       } else if (message.type === "error") {
@@ -849,11 +1056,91 @@
       }
     }
 
+    function addTimelineEvent(message) {
+      state.timelineEvents.unshift(message);
+      state.timelineEvents = state.timelineEvents.slice(0, 80);
+      addEvent(timelineTitle(message), timelineDetail(message), message.timestamp);
+      const kind = timelineHistoryKind(message.event);
+      if (kind) addHistoryEvent(kind, timelineHistoryLabel(message.event), performance.now(), 600);
+    }
+
+    function timelineTitle(message) {
+      const labels = {
+        final_transcript: "Final transcript",
+        realtime_transcript: "Realtime update",
+        recording_ended: "Recording ended",
+        recording_started: "Recording started",
+        transcription_started: "Final transcription started",
+        wakeword_detected: "Wake word detected",
+        wakeword_followup_started: "Follow-up voice window",
+        wakeword_followup_timeout: "Follow-up timeout",
+        wakeword_timeout: "Wake word timeout",
+        wakeword_wait_ended: "Wake word wait ended",
+        wakeword_wait_started: "Waiting for wake word"
+      };
+      return labels[message.event] || message.event || "Timeline event";
+    }
+
+    function timelineDetail(message) {
+      const details = [];
+      if (message.segmentId) details.push("Segment " + message.segmentId);
+      const segment = message.segment || {};
+      if (segment.recordingStartedAt) details.push("start " + formatWallTime(segment.recordingStartedAt));
+      if (segment.recordingEndedAt) details.push("end " + formatWallTime(segment.recordingEndedAt));
+      if (Number.isFinite(Number(segment.durationSeconds))) {
+        details.push("duration " + formatSeconds(segment.durationSeconds));
+      } else if (Number.isFinite(Number(message.durationSeconds))) {
+        details.push("duration " + formatSeconds(message.durationSeconds));
+      }
+      if (segment.preRecordingBuffer) {
+        details.push("pre-roll " + formatSeconds(segment.preRecordingBuffer.includedSeconds));
+      }
+      const wake = message.wakeWord || segment.wakeWord;
+      if (wake && wake.enabled) {
+        if (wake.detectedAt) details.push("wake " + formatWallTime(wake.detectedAt));
+        else if (wake.timeoutAt) details.push("timeout " + formatWallTime(wake.timeoutAt));
+        else if (wake.state) details.push(wake.state.replaceAll("_", " "));
+      }
+      if (message.reason) details.push(message.reason);
+      return details.join(" - ");
+    }
+
+    function timelineHistoryKind(eventName) {
+      if (!eventName) return null;
+      if (eventName === "wakeword_detected") return "wakeword_detected";
+      if (eventName === "wakeword_followup_started") return "wakeword_detected";
+      if (eventName === "wakeword_followup_timeout") return "wakeword_timeout";
+      if (eventName === "wakeword_timeout") return "wakeword_timeout";
+      if (eventName.startsWith("wakeword")) return "wakeword_wait";
+      if (eventName.startsWith("recording")) return "recording";
+      if (eventName.startsWith("realtime")) return "realtime";
+      if (eventName.startsWith("final") || eventName.startsWith("transcription")) return "transcribing";
+      return null;
+    }
+
+    function timelineHistoryLabel(eventName) {
+      const labels = {
+        final_transcript: "final",
+        realtime_transcript: "rt",
+        recording_ended: "end",
+        recording_started: "rec",
+        transcription_started: "asr",
+        wakeword_detected: "wake+",
+        wakeword_followup_started: "voice",
+        wakeword_followup_timeout: "wake!",
+        wakeword_timeout: "wake!",
+        wakeword_wait_started: "wake"
+      };
+      return labels[eventName] || "evt";
+    }
+
     function applySettings(settings) {
       if (!settings) return;
       const finalEngine = settings.transcription_engine || "--";
       const realtimeEngine = settings.realtime_transcription_engine || settings.transcription_engine || "--";
       const usesParakeet = String(finalEngine).includes("parakeet") || String(realtimeEngine).includes("parakeet");
+      state.wakeEnabled = Boolean(settings.wake_word_enabled);
+      updateStateRail(state.lastServerState || "idle");
       ui.tuningProfile.textContent = settings.tuning_profile || "custom";
       ui.finalModel.textContent = settings.model || "--";
       if (settings.use_main_model_for_realtime) {
@@ -866,6 +1153,9 @@
       ui.deviceName.textContent = (settings.device || "--") + " / " + (settings.compute_type || "default");
       ui.cadenceInfo.textContent = formatSeconds(settings.realtime_processing_pause) + " realtime pause, batch " + settings.realtime_batch_size;
       ui.vadInfo.textContent = formatSeconds(settings.post_speech_silence_duration) + " final silence, min " + formatSeconds(settings.min_length_of_recording);
+      ui.wakeInfo.textContent = settings.wake_word_enabled
+        ? (settings.wakeword_backend || "wake") + " / " + (settings.wake_words || "model")
+        : "Off";
       ui.decodeInfo.textContent = usesParakeet
         ? "Parakeet: batch " + settings.batch_size + "; beam not used"
         : "Beam " + settings.beam_size + " final / " + settings.beam_size_realtime + " realtime";
@@ -886,6 +1176,9 @@
       }
       segment.text = text;
       segment.final = final;
+      if (details.segment) {
+        segment.timeline = details.segment;
+      }
       segment.rawText = final ? "" : details.rawText || "";
       segment.displayText = final ? text : details.displayText || text || "";
       segment.stableText = final ? "" : details.stableText || "";
@@ -948,8 +1241,35 @@
         }
         meta.append(left, right);
         article.append(meta, body);
+        const details = renderSegmentDetails(segment.timeline);
+        if (details) article.append(details);
         ui.transcript.append(article);
       }
+    }
+
+    function renderSegmentDetails(timeline) {
+      if (!timeline) return null;
+      const items = [];
+      if (timeline.recordingStartedAt) items.push("Start " + formatWallTime(timeline.recordingStartedAt));
+      if (timeline.recordingEndedAt) items.push("End " + formatWallTime(timeline.recordingEndedAt));
+      if (Number.isFinite(Number(timeline.durationSeconds))) items.push("Duration " + formatSeconds(timeline.durationSeconds));
+      if (timeline.preRecordingBuffer) {
+        const pre = timeline.preRecordingBuffer;
+        items.push("Pre-roll " + formatSeconds(pre.includedSeconds));
+      }
+      if (timeline.wakeWord && timeline.wakeWord.enabled) {
+        if (timeline.wakeWord.detectedAt) items.push("Wake " + formatWallTime(timeline.wakeWord.detectedAt));
+        else items.push("Wake mode");
+      }
+      if (!items.length) return null;
+      const row = document.createElement("div");
+      row.className = "segment-details";
+      for (const item of items) {
+        const chip = document.createElement("span");
+        chip.textContent = item;
+        row.append(chip);
+      }
+      return row;
     }
 
     async function startStream() {
@@ -1002,6 +1322,15 @@
       state.socket.send(JSON.stringify({ type: "start" }));
       addHistoryEvent("stream", "start");
       addEvent("Microphone stream started");
+      if (state.wakeEnabled) {
+        setRecordState("Waiting for wake word", "wait");
+        ui.subtitle.textContent = "Waiting for wake word";
+        updateStateRail("wakeword_wait");
+      } else {
+        setRecordState("Waiting for voice", "wait");
+        ui.subtitle.textContent = "Waiting for voice";
+        updateStateRail("listening");
+      }
     }
 
     function stopStream() {
@@ -1027,7 +1356,9 @@
       state.clientSpeechActive = false;
       ui.streamButton.classList.remove("active");
       ui.streamButton.querySelector("span").textContent = "Start stream";
-      setRecordState("Idle", false);
+      setRecordState("Idle", "");
+      ui.subtitle.textContent = "Idle";
+      updateStateRail("idle");
       addHistoryEvent("stop", "stop");
       addEvent("Microphone stream stopped");
     }
@@ -1093,6 +1424,10 @@
         mic: "#5ad7ff",
         stream: "#5ad7ff",
         voice: "#57d68d",
+        wakeword: "#f1bd5a",
+        wakeword_wait: "#f1bd5a",
+        wakeword_detected: "#57d68d",
+        wakeword_timeout: "#ff6b6b",
         recording: "#ff6b6b",
         silence: "#f1bd5a",
         listening: "#9aa6b2",
@@ -1150,16 +1485,17 @@
       const duration = historyConfig.seconds * 1000;
       const axisTop = top;
       const laneTop = top + 30;
-      const laneGap = 25;
-      const levelTop = top + 132;
+      const laneGap = 22;
+      const levelTop = top + 148;
       const levelHeight = bottom - levelTop - 6;
       const speechNorm = (historyConfig.speechOnDb - historyConfig.floorDb) / Math.abs(historyConfig.floorDb);
       const speechY = bottom - speechNorm * levelHeight;
       const lanes = [
         { id: "mic", label: "Mic", y: laneTop, match: kind => kind === "mic" || kind === "stream" || kind === "stop" },
-        { id: "vad", label: "VAD", y: laneTop + laneGap, match: kind => kind === "voice" || kind === "silence" || kind === "listening" || kind === "idle" },
-        { id: "rec", label: "Rec", y: laneTop + laneGap * 2, match: kind => kind === "recording" },
-        { id: "asr", label: "ASR", y: laneTop + laneGap * 3, match: kind => kind === "transcribing" || kind === "realtime" || kind === "final" || kind === "warning" || kind === "error" }
+        { id: "wake", label: "Wake", y: laneTop + laneGap, match: kind => kind === "wakeword_wait" || kind === "wakeword_detected" || kind === "wakeword_timeout" },
+        { id: "vad", label: "VAD", y: laneTop + laneGap * 2, match: kind => kind === "voice" || kind === "silence" || kind === "listening" || kind === "idle" },
+        { id: "rec", label: "Rec", y: laneTop + laneGap * 3, match: kind => kind === "recording" },
+        { id: "asr", label: "ASR", y: laneTop + laneGap * 4, match: kind => kind === "transcribing" || kind === "realtime" || kind === "final" || kind === "warning" || kind === "error" }
       ];
 
       ctx.fillStyle = "#9aa6b2";
@@ -1290,6 +1626,7 @@
 
     ui.clearButton.addEventListener("click", () => {
       state.segments = [];
+      state.timelineEvents = [];
       renderTranscript();
       if (state.socket && state.socket.readyState === WebSocket.OPEN) {
         state.socket.send(JSON.stringify({ type: "clear" }));
@@ -1314,6 +1651,7 @@
 
     connectSocket().catch(() => {});
     renderTranscript();
+    updateStateRail("idle");
     drawScope();
   </script>
 </body>

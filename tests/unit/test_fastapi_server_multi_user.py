@@ -246,6 +246,14 @@ class FakeRecorder:
         self.on_recording_start = kwargs.get("on_recording_start")
         self.on_recording_stop = kwargs.get("on_recording_stop")
         self.on_transcription_start = kwargs.get("on_transcription_start")
+        self.on_wakeword_detected = kwargs.get("on_wakeword_detected")
+        self.on_wakeword_timeout = kwargs.get("on_wakeword_timeout")
+        self.on_wakeword_detection_start = kwargs.get("on_wakeword_detection_start")
+        self.on_wakeword_detection_end = kwargs.get("on_wakeword_detection_end")
+        self.on_vad_start = kwargs.get("on_vad_start")
+        self.on_vad_stop = kwargs.get("on_vad_stop")
+        self.on_vad_detect_start = kwargs.get("on_vad_detect_start")
+        self.on_vad_detect_stop = kwargs.get("on_vad_detect_stop")
         self.realtime_callback = (
             kwargs.get("on_realtime_transcription_update")
             or kwargs.get("on_realtime_transcription_stabilized")
@@ -255,6 +263,11 @@ class FakeRecorder:
         self.audio_queue = queue.Queue()
         self.recorded_audio_queue = queue.Queue()
         self.final_text = queue.Queue()
+        self.wake_word_timeout = kwargs.get("wake_word_timeout", 5.0)
+        self.wakeword_detected = False
+        self.wake_word_detect_time = 0
+        self.start_recording_on_voice_activity = False
+        self.stop_recording_on_voice_deactivity = False
         self.is_recording = False
         self.is_shut_down = False
         self.has_audio = False
@@ -465,6 +478,197 @@ class FastAPIMultiUserSessionTests(unittest.TestCase):
         config = FakeRecorder.instances[-1].kwargs
         self.assertTrue(config["warmup_vad"])
 
+    def test_recorder_sessions_receive_wake_word_configuration(self):
+        service, _ = make_service(
+            wakeword_backend="pvporcupine",
+            wake_words="jarvis",
+            wake_words_sensitivity=0.72,
+            wake_word_timeout=3.5,
+            wake_word_buffer_duration=0.25,
+        )
+
+        self.assertIsNotNone(service.admit_session("first"))
+
+        config = FakeRecorder.instances[-1].kwargs
+        self.assertEqual(config["wakeword_backend"], "pvporcupine")
+        self.assertEqual(config["wake_words"], "jarvis")
+        self.assertEqual(config["wake_words_sensitivity"], 0.72)
+        self.assertEqual(config["wake_word_timeout"], 3.5)
+        self.assertEqual(config["wake_word_buffer_duration"], 0.25)
+        self.assertTrue(callable(config["on_wakeword_detected"]))
+        self.assertTrue(callable(config["on_wakeword_timeout"]))
+
+    def test_wake_word_callbacks_publish_status_and_timeline_events(self):
+        service, manager = make_service(
+            wakeword_backend="pvporcupine",
+            wake_words="jarvis",
+        )
+        session = service.admit_session("first")
+        self.assertIsNotNone(session)
+        recorder = FakeRecorder.instances[-1]
+
+        recorder.on_wakeword_detection_start()
+        recorder.on_wakeword_detected()
+        recorder.on_wakeword_timeout()
+
+        timeline_events = [
+            message.get("event")
+            for message in manager.messages["first"]
+            if message.get("type") == "timeline"
+        ]
+        statuses = [
+            message.get("state")
+            for message in manager.messages["first"]
+            if message.get("type") == "status"
+        ]
+
+        self.assertIn("wakeword_wait_started", timeline_events)
+        self.assertIn("wakeword_detected", timeline_events)
+        self.assertIn("wakeword_timeout", timeline_events)
+        self.assertIn("wakeword_wait", statuses)
+        self.assertIn("wakeword_detected", statuses)
+        self.assertIn("wakeword_timeout", statuses)
+
+    def test_wake_word_session_returns_to_wake_wait_after_recording_and_final(self):
+        service, manager = make_service(
+            wakeword_backend="pvporcupine",
+            wake_words="jarvis",
+        )
+        session = service.admit_session("first")
+        self.assertIsNotNone(session)
+        session.start_streaming()
+
+        session._on_wakeword_detected()
+        session._on_recording_start()
+        session._on_recording_stop()
+
+        statuses = [
+            message.get("state")
+            for message in manager.messages["first"]
+            if message.get("type") == "status"
+        ]
+        self.assertEqual(statuses[-1], "wakeword_wait")
+
+        self.assertTrue(session._publish_final_text("done", session.generation))
+        statuses = [
+            message.get("state")
+            for message in manager.messages["first"]
+            if message.get("type") == "status"
+        ]
+        self.assertEqual(statuses[-1], "wakeword_wait")
+
+    def test_wake_word_followup_window_stays_in_voice_mode_after_recording(self):
+        service, manager = make_service(
+            wakeword_backend="pvporcupine",
+            wake_words="jarvis",
+            wake_word_timeout=3.0,
+            wake_word_followup_window=5.0,
+        )
+        session = service.admit_session("first")
+        self.assertIsNotNone(session)
+        session.start_streaming()
+        recorder = FakeRecorder.instances[-1]
+
+        session._on_wakeword_detected()
+        session._on_recording_start()
+        session._on_recording_stop()
+
+        statuses = [
+            message.get("state")
+            for message in manager.messages["first"]
+            if message.get("type") == "status"
+        ]
+        self.assertEqual(statuses[-1], "wakeword_detected")
+        self.assertTrue(recorder.wakeword_detected)
+        self.assertEqual(recorder.wake_word_timeout, 5.0)
+        self.assertTrue(recorder.start_recording_on_voice_activity)
+        self.assertTrue(recorder.stop_recording_on_voice_deactivity)
+        self.assertTrue(any(
+            message.get("event") == "wakeword_followup_started"
+            for message in manager.messages["first"]
+            if message.get("type") == "timeline"
+        ))
+
+        self.assertTrue(session._publish_final_text("done", session.generation))
+        statuses = [
+            message.get("state")
+            for message in manager.messages["first"]
+            if message.get("type") == "status"
+        ]
+        self.assertEqual(statuses[-1], "wakeword_detected")
+
+        generation = session._wakeword_followup_generation
+        self.assertTrue(session._finish_wakeword_followup(generation))
+        statuses = [
+            message.get("state")
+            for message in manager.messages["first"]
+            if message.get("type") == "status"
+        ]
+        self.assertEqual(statuses[-1], "wakeword_wait")
+        self.assertFalse(recorder.wakeword_detected)
+        self.assertEqual(recorder.wake_word_timeout, 3.0)
+        self.assertFalse(recorder.start_recording_on_voice_activity)
+        self.assertFalse(recorder.stop_recording_on_voice_deactivity)
+        self.assertTrue(any(
+            message.get("event") == "wakeword_followup_timeout"
+            for message in manager.messages["first"]
+            if message.get("type") == "timeline"
+        ))
+
+    def test_wake_word_session_ignores_late_vad_detect_start_after_reset(self):
+        service, manager = make_service(
+            wakeword_backend="pvporcupine",
+            wake_words="jarvis",
+        )
+        session = service.admit_session("first")
+        self.assertIsNotNone(session)
+        session.start_streaming()
+        recorder = FakeRecorder.instances[-1]
+
+        recorder.on_wakeword_detected()
+        recorder.on_vad_detect_start()
+        recorder.on_recording_start()
+        recorder.on_recording_stop()
+        recorder.on_vad_detect_start()
+
+        statuses = [
+            message.get("state")
+            for message in manager.messages["first"]
+            if message.get("type") == "status"
+        ]
+        self.assertIn("voice", statuses)
+        self.assertEqual(statuses[-1], "wakeword_wait")
+
+    def test_recording_timeline_metadata_is_attached_to_final_segment(self):
+        service, manager = make_service(pre_recording_buffer_duration=0.4)
+        session = service.admit_session("first")
+        session.start_streaming()
+
+        self.assertTrue(session.ingest_audio_packet(audio_packet())[0])
+        session.stop_streaming()
+
+        self._wait_for(lambda: any(job.kind == "final" for job in service.scheduler.jobs))
+        final_job = next(job for job in service.scheduler.jobs if job.kind == "final")
+        service.scheduler.complete(final_job, text="private-final")
+        self._wait_for(lambda: any(msg.get("type") == "final" for msg in manager.messages["first"]))
+
+        final = next(msg for msg in manager.messages["first"] if msg.get("type") == "final")
+        segment = final["segment"]
+        self.assertEqual(final["segmentId"], segment["segmentId"])
+        self.assertIn("recordingStartedAt", segment)
+        self.assertIn("recordingEndedAt", segment)
+        self.assertIn("durationSeconds", segment)
+        self.assertIn("preRecordingBuffer", segment)
+        self.assertEqual(segment["preRecordingBuffer"]["configuredSeconds"], 0.4)
+        self.assertTrue(any(
+            msg.get("type") == "timeline" and msg.get("event") == "recording_started"
+            for msg in manager.messages["first"]
+        ))
+        self.assertTrue(any(
+            msg.get("type") == "timeline" and msg.get("event") == "final_transcript"
+            for msg in manager.messages["first"]
+        ))
+
     def test_sessions_use_separate_recorder_vad_state_with_shared_executors(self):
         service, _ = make_service(audio_queue_size=7)
 
@@ -645,6 +849,26 @@ else:
 
 @unittest.skipIf(TestClient is None, "FastAPI test client is not installed")
 class FastAPIMultiUserWebSocketTests(unittest.TestCase):
+    def test_config_endpoint_exposes_and_updates_runtime_settings(self):
+        settings = ServerSettings(model_warmup=False, max_sessions=1)
+        app = create_app(settings, scheduler_factory=AutoScheduler, recorder_factory=FakeRecorder)
+
+        with TestClient(app) as client:
+            config = client.get("/api/config")
+            self.assertEqual(config.status_code, 200)
+            self.assertIn("runtimeSettings", config.json())
+
+            update = client.patch(
+                "/api/config",
+                json={"settings": {"max_sessions": 3, "wake_words": "jarvis"}},
+            )
+
+            self.assertEqual(update.status_code, 200)
+            body = update.json()
+            self.assertEqual(body["applied"]["max_sessions"]["appliesTo"], "active_sessions")
+            self.assertEqual(body["applied"]["wake_words"]["appliesTo"], "new_sessions")
+            self.assertEqual(body["settings"]["max_sessions"], 3)
+
     def test_two_websocket_clients_get_isolated_transcripts(self):
         settings = ServerSettings(
             model_warmup=False,

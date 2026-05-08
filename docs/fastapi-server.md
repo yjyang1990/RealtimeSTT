@@ -94,6 +94,20 @@ VAD and transcription timing flags:
 | `--realtime-boundary-detector-sensitivity` | Boundary detector sensitivity. |
 | `--realtime-boundary-followup-delays` | Comma-separated follow-up realtime delays. |
 
+Wake word flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--wakeword-backend` | Wake word backend passed to `AudioToTextRecorder`, for example `pvporcupine` or `openwakeword`. |
+| `--wake-words` | Comma-separated wake words or model names for the selected backend. |
+| `--wake-words-sensitivity` | Wake word detection sensitivity. |
+| `--wake-word-activation-delay` | Delay before wake word mode becomes active. |
+| `--wake-word-timeout` | Time to wait for speech after wake detection before returning to wake wait mode. |
+| `--wake-word-buffer-duration` | Wake-word audio removed from the beginning of the recorded segment. |
+| `--wake-word-followup-window` | Optional post-recording grace period that keeps the session in Voice mode so follow-up speech can start without repeating the wake word. |
+| `--openwakeword-model-paths` | Comma-separated OpenWakeWord model paths. |
+| `--openwakeword-inference-framework` | OpenWakeWord inference framework, default `onnx`. |
+
 Capacity and scheduling flags:
 
 | Flag | Meaning |
@@ -114,6 +128,23 @@ Capacity and scheduling flags:
 
 Named tuning profiles are available through `--profile`; explicit flags
 override profile defaults.
+
+Runtime settings:
+
+`GET /api/config` includes a `runtimeSettings` contract that separates
+`activeSessionSafe`, `newSessionOnly`, and `startupOnly` settings. Runtime
+changes are explicit:
+
+```bash
+curl -X PATCH http://localhost:8010/api/config \
+  -H 'Content-Type: application/json' \
+  -d '{"settings":{"max_sessions":8,"wake_words":"jarvis"}}'
+```
+
+Active-session-safe capacity settings affect the running service. New-session
+settings are copied into future browser sessions; existing sessions keep their
+recorder configuration. Startup-only settings, including ASR engines and model
+paths, are rejected because shared inference workers are already initialized.
 
 ## Engine Recipes
 
@@ -179,6 +210,20 @@ python example_fastapi_server/server.py \
   --language en
 ```
 
+Wake word mode with Porcupine:
+
+```bash
+python example_fastapi_server/server.py \
+  --engine faster_whisper \
+  --model small.en \
+  --realtime-model tiny.en \
+  --wakeword-backend pvporcupine \
+  --wake-words jarvis \
+  --wake-words-sensitivity 0.7 \
+  --wake-word-timeout 5 \
+  --wake-word-followup-window 5
+```
+
 ## WebSocket Protocol
 
 The browser sends binary audio packets to `/ws/transcribe`:
@@ -216,6 +261,8 @@ Server event types include:
 
 - `hello`: assigns `clientId` and `sessionId`.
 - `ready`: model lanes are initialized.
+- `timeline`: timing events for wake word state, recording start/end,
+  realtime updates, final transcription start, and final transcript delivery.
 - `realtime`: interim text for a session-local `segmentId`.
 - `final`: final text for the same session-local `segmentId`.
 - `status`: session/server state.
@@ -226,7 +273,9 @@ Server event types include:
 - `metrics`: per-session metrics response.
 
 Transcript-bearing events include `sessionId` and are routed only to that
-session.
+session. `realtime` and `final` events may include a `segment` object with
+recording start/end timestamps, duration, pre-recording buffer range, and wake
+word timing when available.
 
 ## Metrics And Health
 
@@ -250,7 +299,11 @@ latency, and worker busy ratios.
 
 The UI connects to `/ws/transcribe`, sends browser microphone audio packets, and
 keeps session-local realtime and final transcript blocks related by
-`segmentId`. Clear/reset affects only the issuing session.
+`segmentId`. Each transcript block shows recording start, recording end,
+duration, pre-roll, and wake timing when the server has that data. The left
+timeline lists wake wait/detect/timeout events, recording start/end, realtime
+updates, and final transcript delivery. Clear/reset affects only the issuing
+session.
 
 Admission limits are explicit. When `--max-sessions` is reached, new websocket
 clients receive an admission error and close code `1013`. When active speaker

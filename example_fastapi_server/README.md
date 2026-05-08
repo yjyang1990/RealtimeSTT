@@ -94,6 +94,33 @@ python example_fastapi_server/server.py \
   --max-audio-queue-seconds-per-session 30
 ```
 
+Runtime-safe configuration is exposed through `GET /api/config` and
+`PATCH /api/config`. The config response lists which settings are safe for
+active sessions, which apply only to future sessions, and which require a server
+restart because shared inference workers are already loaded. For example:
+
+```bash
+curl -X PATCH http://localhost:8010/api/config \
+  -H 'Content-Type: application/json' \
+  -d '{"settings":{"max_sessions":8,"wake_words":"jarvis"}}'
+```
+
+Wake word mode is passed through to each browser session's recorder:
+
+```bash
+python example_fastapi_server/server.py \
+  --wakeword-backend pvporcupine \
+  --wake-words jarvis \
+  --wake-words-sensitivity 0.7 \
+  --wake-word-timeout 5 \
+  --wake-word-followup-window 5
+```
+
+Wake wait, detection, follow-up voice windows, timeout, recording start,
+recording end, realtime, and final transcript transitions are surfaced as
+`timeline` websocket events and in the browser UI. Transcript blocks include
+segment timing, duration, pre-roll, and wake detection metadata when available.
+
 Health and load are exposed at:
 
 - `/health`: readiness, active sessions/speakers, startup errors, worker state
@@ -224,6 +251,7 @@ Server events:
 
 - `hello`: assigns `clientId` and `sessionId`
 - `ready`: model lanes are initialized; includes public settings and limits
+- `timeline`: segment timing and wake word state transitions
 - `realtime`: interim text for a session-local `segmentId`
 - `final`: final text for the same session-local `segmentId`; the UI replaces
   the interim block

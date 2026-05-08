@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import collections
+import datetime
 import json
 import logging
 import math
@@ -8,7 +9,7 @@ import threading
 import time
 import uuid
 import wave
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
@@ -94,6 +95,135 @@ TUNING_PROFILES = {
     },
 }
 
+ACTIVE_RUNTIME_SETTINGS = {
+    "log_level",
+    "max_active_speakers",
+    "max_audio_packet_bytes",
+    "max_final_queue_depth_per_session",
+    "max_global_inference_queue_depth",
+    "max_realtime_queue_age_ms",
+    "max_sessions",
+    "realtime_degradation_threshold_ms",
+}
+
+NEW_SESSION_RUNTIME_SETTINGS = {
+    "audio_queue_size",
+    "early_transcription_on_silence",
+    "initial_prompt",
+    "initial_prompt_realtime",
+    "max_audio_queue_seconds_per_session",
+    "min_gap_between_recordings",
+    "min_length_of_recording",
+    "openwakeword_inference_framework",
+    "openwakeword_model_paths",
+    "post_speech_silence_duration",
+    "pre_recording_buffer_duration",
+    "realtime_batch_size",
+    "realtime_boundary_detector_sensitivity",
+    "realtime_boundary_followup_delays",
+    "realtime_callback",
+    "realtime_max_audio_seconds",
+    "realtime_min_audio_seconds",
+    "realtime_processing_pause",
+    "realtime_transcription_use_syllable_boundaries",
+    "silero_sensitivity",
+    "vad_energy_threshold",
+    "vad_filter",
+    "wake_word_activation_delay",
+    "wake_word_buffer_duration",
+    "wake_word_followup_window",
+    "wake_word_timeout",
+    "wake_words",
+    "wake_words_sensitivity",
+    "wakeword_backend",
+    "webrtc_sensitivity",
+}
+
+STARTUP_ONLY_SETTINGS = {
+    "batch_size",
+    "beam_size",
+    "beam_size_realtime",
+    "compute_type",
+    "device",
+    "download_root",
+    "gpu_device_index",
+    "host",
+    "language",
+    "model",
+    "model_warmup",
+    "normalize_audio",
+    "port",
+    "realtime_model",
+    "realtime_transcription_engine",
+    "realtime_transcription_engine_options",
+    "transcription_engine",
+    "transcription_engine_options",
+    "tuning_description",
+    "tuning_profile",
+    "use_main_model_for_realtime",
+}
+
+INT_SETTINGS = {
+    "audio_queue_size",
+    "batch_size",
+    "beam_size",
+    "beam_size_realtime",
+    "gpu_device_index",
+    "max_active_speakers",
+    "max_audio_packet_bytes",
+    "max_final_queue_depth_per_session",
+    "max_global_inference_queue_depth",
+    "max_realtime_queue_age_ms",
+    "max_sessions",
+    "port",
+    "realtime_batch_size",
+    "realtime_degradation_threshold_ms",
+    "webrtc_sensitivity",
+}
+
+FLOAT_SETTINGS = {
+    "early_transcription_on_silence",
+    "max_audio_queue_seconds_per_session",
+    "min_gap_between_recordings",
+    "min_length_of_recording",
+    "post_speech_silence_duration",
+    "pre_recording_buffer_duration",
+    "realtime_boundary_detector_sensitivity",
+    "realtime_max_audio_seconds",
+    "realtime_min_audio_seconds",
+    "realtime_processing_pause",
+    "silero_sensitivity",
+    "vad_energy_threshold",
+    "wake_word_activation_delay",
+    "wake_word_buffer_duration",
+    "wake_word_followup_window",
+    "wake_word_timeout",
+    "wake_words_sensitivity",
+}
+
+BOOL_SETTINGS = {
+    "model_warmup",
+    "normalize_audio",
+    "realtime_transcription_use_syllable_boundaries",
+    "use_main_model_for_realtime",
+    "vad_filter",
+}
+
+OPTIONAL_STRING_SETTINGS = {
+    "download_root",
+    "initial_prompt",
+    "initial_prompt_realtime",
+    "openwakeword_model_paths",
+    "realtime_transcription_engine",
+}
+
+DICT_SETTINGS = {
+    "realtime_transcription_engine_options",
+    "transcription_engine_options",
+}
+
+TUPLE_FLOAT_SETTINGS = {"realtime_boundary_followup_delays"}
+
 
 @dataclass
 class ServerSettings:
@@ -131,6 +261,15 @@ class ServerSettings:
     early_transcription_on_silence: float = 0.2
     initial_prompt: Optional[str] = None
     initial_prompt_realtime: Optional[str] = None
+    wakeword_backend: str = ""
+    openwakeword_model_paths: Optional[str] = None
+    openwakeword_inference_framework: str = "onnx"
+    wake_words: str = ""
+    wake_words_sensitivity: float = 0.5
+    wake_word_activation_delay: float = 0.0
+    wake_word_timeout: float = 5.0
+    wake_word_buffer_duration: float = 0.1
+    wake_word_followup_window: float = 0.0
     use_main_model_for_realtime: bool = False
     audio_queue_size: int = 128
     max_audio_packet_bytes: int = 512 * 1024
@@ -152,7 +291,49 @@ class ServerSettings:
         data = asdict(self)
         data.pop("transcription_engine_options", None)
         data.pop("realtime_transcription_engine_options", None)
+        data["wake_word_enabled"] = self.wake_word_enabled()
         return data
+
+    def wake_word_enabled(self):
+        return bool(str(self.wakeword_backend or "").strip() and str(self.wake_words or "").strip())
+
+
+def runtime_settings_contract():
+    return {
+        "activeSessionSafe": sorted(ACTIVE_RUNTIME_SETTINGS),
+        "newSessionOnly": sorted(NEW_SESSION_RUNTIME_SETTINGS),
+        "startupOnly": sorted(STARTUP_ONLY_SETTINGS),
+    }
+
+
+def coerce_setting_value(name, value):
+    if name in BOOL_SETTINGS:
+        if not isinstance(value, bool):
+            raise ValueError(f"{name} must be a boolean")
+        return value
+    if name in INT_SETTINGS:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{name} must be an integer")
+        return value
+    if name in FLOAT_SETTINGS:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{name} must be a number")
+        return float(value)
+    if name in TUPLE_FLOAT_SETTINGS:
+        if not isinstance(value, (list, tuple)):
+            raise ValueError(f"{name} must be a list of numbers")
+        return tuple(float(item) for item in value)
+    if name in DICT_SETTINGS:
+        if value is not None and not isinstance(value, dict):
+            raise ValueError(f"{name} must be a JSON object or null")
+        return value
+    if name in OPTIONAL_STRING_SETTINGS:
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{name} must be a string or null")
+        return value
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a string")
+    return value
 
 
 class SegmentState:
@@ -182,6 +363,219 @@ class SegmentState:
             self._segment_id += 1
             self._has_realtime = False
             return self._segment_id
+
+
+def timestamp_iso(timestamp):
+    return (
+        datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def segment_text_fields(segment):
+    fields = {}
+    for key in (
+        "durationSeconds",
+        "endReason",
+        "preRecordingBuffer",
+        "recordingEndedAt",
+        "recordingEndedAtIso",
+        "recordingStartedAt",
+        "recordingStartedAtIso",
+        "wakeWord",
+    ):
+        if key in segment:
+            fields[key] = segment[key]
+    return fields
+
+
+class SegmentTimelineTracker:
+    def __init__(self, settings: ServerSettings):
+        self.settings = settings
+        self._lock = threading.Lock()
+        self._segments = {}
+        self._current_segment_id = None
+        self._wakeword_wait_started_at = None
+        self._pending_wakeword_detected_at = None
+        self._last_wakeword_timeout_at = None
+
+    def reset(self):
+        with self._lock:
+            self._segments.clear()
+            self._current_segment_id = None
+            self._wakeword_wait_started_at = None
+            self._pending_wakeword_detected_at = None
+            self._last_wakeword_timeout_at = None
+
+    def mark_wakeword_wait_started(self, timestamp=None):
+        timestamp = time.time() if timestamp is None else float(timestamp)
+        with self._lock:
+            self._wakeword_wait_started_at = timestamp
+            self._pending_wakeword_detected_at = None
+            return {
+                "wakeWord": self._wakeword_payload(
+                    wait_started_at=timestamp,
+                    state="waiting_for_wake_word",
+                )
+            }
+
+    def mark_wakeword_wait_ended(self, timestamp=None):
+        timestamp = time.time() if timestamp is None else float(timestamp)
+        with self._lock:
+            wait_started_at = self._wakeword_wait_started_at
+            self._wakeword_wait_started_at = None
+            return {
+                "wakeWord": self._wakeword_payload(
+                    wait_started_at=wait_started_at,
+                    wait_ended_at=timestamp,
+                    state="wake_word_wait_ended",
+                )
+            }
+
+    def mark_wakeword_detected(self, timestamp=None):
+        timestamp = time.time() if timestamp is None else float(timestamp)
+        with self._lock:
+            self._pending_wakeword_detected_at = timestamp
+            return {
+                "wakeWord": self._wakeword_payload(
+                    wait_started_at=self._wakeword_wait_started_at,
+                    detected_at=timestamp,
+                    state="wake_word_detected_waiting_for_voice",
+                )
+            }
+
+    def mark_wakeword_timeout(self, timestamp=None):
+        timestamp = time.time() if timestamp is None else float(timestamp)
+        with self._lock:
+            self._last_wakeword_timeout_at = timestamp
+            self._pending_wakeword_detected_at = None
+            return {
+                "wakeWord": self._wakeword_payload(
+                    wait_started_at=self._wakeword_wait_started_at,
+                    timeout_at=timestamp,
+                    state="wake_word_timeout",
+                )
+            }
+
+    def mark_recording_started(self, segment_id, actual_preroll_seconds=None, timestamp=None):
+        timestamp = time.time() if timestamp is None else float(timestamp)
+        configured_preroll = max(0.0, float(self.settings.pre_recording_buffer_duration))
+        included_preroll = (
+            max(0.0, float(actual_preroll_seconds))
+            if actual_preroll_seconds is not None
+            else configured_preroll
+        )
+        prebuffer = {
+            "configuredSeconds": configured_preroll,
+            "includedSeconds": included_preroll,
+            "startTimestamp": timestamp - included_preroll,
+            "startTimestampIso": timestamp_iso(timestamp - included_preroll),
+            "endTimestamp": timestamp,
+            "endTimestampIso": timestamp_iso(timestamp),
+            "exact": actual_preroll_seconds is not None,
+        }
+        with self._lock:
+            segment = self._segment_locked(segment_id)
+            segment.update({
+                "segmentId": segment_id,
+                "recordingStartedAt": timestamp,
+                "recordingStartedAtIso": timestamp_iso(timestamp),
+                "recordingEndedAt": None,
+                "recordingEndedAtIso": None,
+                "durationSeconds": None,
+                "endReason": None,
+                "preRecordingBuffer": prebuffer,
+            })
+            if self._pending_wakeword_detected_at is not None:
+                segment["wakeWord"] = self._wakeword_payload(
+                    wait_started_at=self._wakeword_wait_started_at,
+                    detected_at=self._pending_wakeword_detected_at,
+                    state="recording",
+                )
+            self._current_segment_id = segment_id
+            return self._copy_segment_locked(segment_id)
+
+    def mark_recording_ended(
+        self,
+        reason,
+        segment_id=None,
+        actual_duration_seconds=None,
+        timestamp=None,
+    ):
+        timestamp = time.time() if timestamp is None else float(timestamp)
+        with self._lock:
+            if segment_id is None:
+                segment_id = self._current_segment_id
+            if segment_id is None:
+                return None
+            segment = self._segment_locked(segment_id)
+            started_at = segment.get("recordingStartedAt")
+            duration = actual_duration_seconds
+            if duration is None and started_at is not None:
+                duration = max(0.0, timestamp - float(started_at))
+            segment.update({
+                "recordingEndedAt": timestamp,
+                "recordingEndedAtIso": timestamp_iso(timestamp),
+                "durationSeconds": duration,
+                "endReason": reason,
+            })
+            self._current_segment_id = None
+            self._pending_wakeword_detected_at = None
+            return self._copy_segment_locked(segment_id)
+
+    def snapshot(self, segment_id=None):
+        with self._lock:
+            if segment_id is None:
+                segment_id = self._current_segment_id
+            if segment_id is None:
+                return None
+            return self._copy_segment_locked(segment_id)
+
+    def _segment_locked(self, segment_id):
+        return self._segments.setdefault(segment_id, {"segmentId": segment_id})
+
+    def _copy_segment_locked(self, segment_id):
+        segment = self._segments.get(segment_id)
+        if segment is None:
+            return None
+        payload = {}
+        for key, value in segment.items():
+            if value is None:
+                continue
+            if isinstance(value, dict):
+                payload[key] = dict(value)
+            else:
+                payload[key] = value
+        return payload
+
+    def _wakeword_payload(
+        self,
+        *,
+        wait_started_at=None,
+        wait_ended_at=None,
+        detected_at=None,
+        timeout_at=None,
+        state=None,
+    ):
+        payload = {
+            "enabled": self.settings.wake_word_enabled(),
+            "backend": self.settings.wakeword_backend,
+            "wakeWords": self.settings.wake_words,
+            "state": state,
+        }
+        timestamps = {
+            "waitStartedAt": wait_started_at,
+            "waitEndedAt": wait_ended_at,
+            "detectedAt": detected_at,
+            "timeoutAt": timeout_at,
+        }
+        for key, value in timestamps.items():
+            if value is None:
+                continue
+            payload[key] = value
+            payload[f"{key}Iso"] = timestamp_iso(value)
+        return payload
 
 
 class RunningStats:
@@ -843,9 +1237,10 @@ class VoiceActivityDetector:
 class RealtimeSession:
     def __init__(self, service, session_id):
         self.service = service
-        self.settings = service.settings
+        self.settings = replace(service.settings)
         self.session_id = session_id
         self.segment_state = SegmentState()
+        self.timeline = SegmentTimelineTracker(self.settings)
         self.vad = VoiceActivityDetector(self.settings)
         self.lock = threading.RLock()
         self.streaming = False
@@ -880,8 +1275,13 @@ class RealtimeSession:
     def start_streaming(self):
         with self.lock:
             self.streaming = True
-            self.status = "listening"
-        self.publish_status("listening")
+            self.status = (
+                "wakeword_wait"
+                if self.settings.wake_word_enabled()
+                and self.settings.wake_word_activation_delay <= 0
+                else "listening"
+            )
+        self.publish_status(self.status)
 
     def stop_streaming(self):
         jobs = []
@@ -905,6 +1305,7 @@ class RealtimeSession:
             self.recording_sample_count = 0
             self.prebuffer.clear()
             self.prebuffer_sample_count = 0
+            self.timeline.reset()
         self.service.scheduler.cancel_session(self.session_id)
         self.service.deactivate_speaker(self.session_id)
 
@@ -919,7 +1320,8 @@ class RealtimeSession:
             self.active_segment_id = None
             self.latest_realtime_sequence = 0
             next_segment = self.segment_state.reset()
-            self.status = "listening" if self.streaming else "idle"
+            self.timeline.reset()
+            self.status = self._waiting_state_locked()
         self.service.scheduler.cancel_session(self.session_id)
         self.service.deactivate_speaker(self.session_id)
         self.service.manager.publish_session(
@@ -1031,17 +1433,23 @@ class RealtimeSession:
         if not result.text:
             return
 
+        event_timestamp = time.time()
         event = {
             "type": result.kind,
             "sessionId": self.session_id,
             "segmentId": result.segment_id,
             "text": result.text,
-            "timestamp": time.time(),
+            "timestamp": event_timestamp,
+            "timestampIso": timestamp_iso(event_timestamp),
             "requestId": result.request_id,
             "queueDelayMs": result.queue_delay * 1000.0,
             "inferenceMs": result.inference_duration * 1000.0,
             "latencyMs": result.total_latency * 1000.0,
         }
+        segment = self.timeline.snapshot(result.segment_id)
+        if segment is not None:
+            event["segment"] = segment
+            event.update(segment_text_fields(segment))
         self.service.manager.publish_session(self.session_id, event)
         if result.kind == "final":
             self.publish_status("listening" if self.streaming else "idle")
@@ -1103,6 +1511,7 @@ class RealtimeSession:
                 "staleRealtimeDiscarded": self.stale_realtime_discarded,
                 "activeSessions": self.service.session_count(),
                 "activeSpeakers": self.service.active_speaker_count(),
+                "wakeWordEnabled": self.settings.wake_word_enabled(),
             }
         self.service.manager.publish_session(self.session_id, message)
 
@@ -1149,6 +1558,11 @@ class RealtimeSession:
         self.last_realtime_submit_at = 0.0
         self.recording_frames = [frame.copy() for frame in self.prebuffer]
         self.recording_sample_count = sum(int(frame.size) for frame in self.recording_frames)
+        self.timeline.mark_recording_started(
+            self.active_segment_id,
+            actual_preroll_seconds=self.prebuffer_sample_count / float(SERVER_SAMPLE_RATE),
+            timestamp=time.time(),
+        )
         self.prebuffer.clear()
         self.prebuffer_sample_count = 0
 
@@ -1157,12 +1571,19 @@ class RealtimeSession:
             return None
         audio = self._recording_audio_float32_locked()
         recording_seconds = audio.size / float(SERVER_SAMPLE_RATE) if audio is not None else 0.0
+        segment_id = self.active_segment_id
+        self.timeline.mark_recording_ended(
+            reason,
+            segment_id=segment_id,
+            actual_duration_seconds=recording_seconds,
+            timestamp=time.time(),
+        )
         self.recording = False
         self.recording_frames = []
         self.recording_sample_count = 0
         self.active_segment_id = None
         self.last_realtime_submit_at = 0.0
-        self.status = "listening" if self.streaming else "idle"
+        self.status = self._waiting_state_locked()
         self.service.deactivate_speaker(self.session_id)
         if audio is None or recording_seconds < self.settings.min_length_of_recording:
             return None
@@ -1236,13 +1657,23 @@ class RealtimeSession:
                 audio_int16 = audio_int16[-max_samples:]
         return audio_int16.astype(np.float32) / INT16_MAX_ABS_VALUE
 
+    def _waiting_state_locked(self, streaming=None):
+        if streaming is None:
+            streaming = self.streaming
+        if not streaming:
+            return "idle"
+        if self.settings.wake_word_enabled():
+            return "wakeword_wait"
+        return "listening"
+
 
 class RecorderBackedRealtimeSession:
     def __init__(self, service, session_id):
         self.service = service
-        self.settings = service.settings
+        self.settings = replace(service.settings)
         self.session_id = session_id
         self.segment_state = SegmentState()
+        self.timeline = SegmentTimelineTracker(self.settings)
         self.lock = threading.RLock()
         self.streaming = False
         self.status = "idle"
@@ -1264,6 +1695,11 @@ class RecorderBackedRealtimeSession:
         self.recording_sample_count = 0
         self._recorded_chunk_callback_seen = False
         self._force_finalize_in_progress = False
+        self._wakeword_voice_window = False
+        self._wakeword_followup_generation = 0
+        self._recorder_wake_word_timeout_before_followup = None
+        self._recorder_start_recording_before_followup = None
+        self._recorder_stop_recording_before_followup = None
         self.queue_delay = {"realtime": RunningStats(), "final": RunningStats()}
         self.inference_duration = {"realtime": RunningStats(), "final": RunningStats()}
         self.total_latency = {"realtime": RunningStats(), "final": RunningStats()}
@@ -1332,16 +1768,28 @@ class RecorderBackedRealtimeSession:
             "early_transcription_on_silence": self.settings.early_transcription_on_silence,
             "initial_prompt": self.settings.initial_prompt,
             "initial_prompt_realtime": self.settings.initial_prompt_realtime,
+            "wakeword_backend": self.settings.wakeword_backend,
+            "openwakeword_model_paths": self.settings.openwakeword_model_paths,
+            "openwakeword_inference_framework": self.settings.openwakeword_inference_framework,
+            "wake_words": self.settings.wake_words,
+            "wake_words_sensitivity": self.settings.wake_words_sensitivity,
+            "wake_word_activation_delay": self.settings.wake_word_activation_delay,
+            "wake_word_timeout": self.settings.wake_word_timeout,
+            "wake_word_buffer_duration": self.settings.wake_word_buffer_duration,
             "pre_recording_buffer_duration": self.settings.pre_recording_buffer_duration,
             "allowed_latency_limit": self.settings.audio_queue_size,
             "handle_buffer_overflow": True,
             "on_recording_start": self._on_recording_start,
             "on_recording_stop": self._on_recording_stop,
             "on_transcription_start": self._on_transcription_start,
-            "on_vad_start": lambda: self.publish_status("voice"),
-            "on_vad_stop": lambda: self.publish_status("silence"),
-            "on_vad_detect_start": lambda: self.publish_status("voice"),
-            "on_vad_detect_stop": lambda: self.publish_status("silence"),
+            "on_wakeword_detected": self._on_wakeword_detected,
+            "on_wakeword_timeout": self._on_wakeword_timeout,
+            "on_wakeword_detection_start": self._on_wakeword_detection_start,
+            "on_wakeword_detection_end": self._on_wakeword_detection_end,
+            "on_vad_start": self._on_vad_start,
+            "on_vad_stop": self._on_vad_stop,
+            "on_vad_detect_start": self._on_vad_detect_start,
+            "on_vad_detect_stop": self._on_vad_detect_stop,
             "on_recorded_chunk": self._on_recorded_chunk,
             "no_log_file": True,
             "transcription_executor": SchedulerTranscriptionExecutor(
@@ -1366,8 +1814,13 @@ class RecorderBackedRealtimeSession:
     def start_streaming(self):
         with self.lock:
             self.streaming = True
-            self.status = "listening"
-        self.publish_status("listening")
+            self.status = (
+                "wakeword_wait"
+                if self.settings.wake_word_enabled()
+                and self.settings.wake_word_activation_delay <= 0
+                else "listening"
+            )
+        self.publish_status(self.status)
 
     def stop_streaming(self):
         with self.lock:
@@ -1387,6 +1840,10 @@ class RecorderBackedRealtimeSession:
             self.generation += 1
             self.streaming = False
             self.status = "closed"
+            self.timeline.reset()
+            self._wakeword_voice_window = False
+            self._wakeword_followup_generation += 1
+            self._clear_recorder_followup_gate_locked()
         self.service.scheduler.cancel_session(self.session_id)
         self.service.cancel_pending_recorder_transcriptions(self.session_id)
         self.service.deactivate_speaker(self.session_id)
@@ -1401,9 +1858,13 @@ class RecorderBackedRealtimeSession:
         with self.lock:
             self.generation += 1
             next_segment = self.segment_state.reset()
+            self.timeline.reset()
             self.reject_current_recording = True
             self.recording_sample_count = 0
-            self.status = "listening" if self.streaming else "idle"
+            self._wakeword_voice_window = False
+            self._wakeword_followup_generation += 1
+            self._clear_recorder_followup_gate_locked()
+            self.status = self._waiting_state_locked()
         self.service.scheduler.cancel_session(self.session_id)
         self.service.cancel_pending_recorder_transcriptions(self.session_id)
         self.service.deactivate_speaker(self.session_id)
@@ -1494,6 +1955,7 @@ class RecorderBackedRealtimeSession:
                 "type": "status",
                 "sessionId": self.session_id,
                 "state": state,
+                "timestamp": time.time(),
                 "activeClientId": self.session_id if self.streaming else None,
                 "queueDepth": self._recorder_queue_depth(),
                 "droppedChunks": self.dropped_audio_chunks,
@@ -1501,7 +1963,15 @@ class RecorderBackedRealtimeSession:
                 "staleRealtimeDiscarded": self.stale_realtime_discarded,
                 "activeSessions": self.service.session_count(),
                 "activeSpeakers": self.service.active_speaker_count(),
+                "wakeWordEnabled": self.settings.wake_word_enabled(),
+                "wakeWord": {
+                    "enabled": self.settings.wake_word_enabled(),
+                    "backend": self.settings.wakeword_backend,
+                    "wakeWords": self.settings.wake_words,
+                    "state": state if str(state).startswith("wakeword") else None,
+                },
             }
+            message["timestampIso"] = timestamp_iso(message["timestamp"])
         self.service.manager.publish_session(self.session_id, message)
 
     def snapshot(self):
@@ -1514,7 +1984,9 @@ class RecorderBackedRealtimeSession:
             "streaming": streaming,
             "recording": recording,
             "state": state,
+            "wakeWordEnabled": self.settings.wake_word_enabled(),
             "currentSegmentId": self.segment_state.current(),
+            "currentSegment": self.timeline.snapshot(self.segment_state.current()),
             "queueDepth": self._recorder_queue_depth(),
             "recordingSeconds": self.recording_sample_count / float(SERVER_SAMPLE_RATE),
             "droppedAudioChunks": self.dropped_audio_chunks,
@@ -1579,35 +2051,64 @@ class RecorderBackedRealtimeSession:
                 return False
             segment_id = self.segment_state.final()
             streaming = self.streaming
+            segment = self._timeline_snapshot(segment_id)
+        timestamp = time.time()
+        payload = {
+            "type": "final",
+            "sessionId": self.session_id,
+            "segmentId": segment_id,
+            "text": text,
+            "timestamp": timestamp,
+            "timestampIso": timestamp_iso(timestamp),
+        }
+        if segment is not None:
+            payload["segment"] = segment
+            payload.update(segment_text_fields(segment))
         self.service.manager.publish_session(
             self.session_id,
-            {
-                "type": "final",
-                "sessionId": self.session_id,
-                "segmentId": segment_id,
-                "text": text,
-                "timestamp": time.time(),
-            },
+            payload,
         )
-        self.publish_status("listening" if streaming else "idle")
+        self._publish_timeline_event(
+            "final_transcript",
+            timestamp=timestamp,
+            segment_id=segment_id,
+            segment=segment,
+            text=text,
+        )
+        self.publish_status(self._waiting_state_locked(streaming))
         return True
 
     def _on_realtime_text(self, text):
         with self.lock:
             if self.reject_current_recording:
                 return
+            segment_id = self.segment_state.realtime()
+            segment = self._timeline_snapshot(segment_id)
         text = (text or "").strip()
         if not text:
             return
+        timestamp = time.time()
+        payload = {
+            "type": "realtime",
+            "sessionId": self.session_id,
+            "segmentId": segment_id,
+            "text": text,
+            "timestamp": timestamp,
+            "timestampIso": timestamp_iso(timestamp),
+        }
+        if segment is not None:
+            payload["segment"] = segment
+            payload.update(segment_text_fields(segment))
         self.service.manager.publish_session(
             self.session_id,
-            {
-                "type": "realtime",
-                "sessionId": self.session_id,
-                "segmentId": self.segment_state.realtime(),
-                "text": text,
-                "timestamp": time.time(),
-            },
+            payload,
+        )
+        self._publish_timeline_event(
+            "realtime_transcript",
+            timestamp=timestamp,
+            segment_id=segment_id,
+            segment=segment,
+            text=text,
         )
 
     def _on_realtime_stabilization_event(self, event):
@@ -1642,6 +2143,8 @@ class RecorderBackedRealtimeSession:
             else raw_text or display_text
         )
         timing = getattr(event, "timing", None)
+        timestamp = time.time()
+        segment = self._timeline_snapshot(segment_id)
         payload = {
             "type": "realtime",
             "sessionId": self.session_id,
@@ -1675,19 +2178,36 @@ class RecorderBackedRealtimeSession:
                 "stable_normalized_offset",
                 None,
             ),
-            "timestamp": time.time(),
+            "timestamp": timestamp,
+            "timestampIso": timestamp_iso(timestamp),
         }
         if timing is not None:
             payload["timing"] = asdict(timing)
+        if segment is not None:
+            payload["segment"] = segment
+            payload.update(segment_text_fields(segment))
 
         self.service.manager.publish_session(self.session_id, payload)
+        self._publish_timeline_event(
+            "realtime_transcript",
+            timestamp=timestamp,
+            segment_id=segment_id,
+            segment=segment,
+            text=text,
+            sequence=payload.get("sequence"),
+        )
 
     def _on_recording_start(self):
+        segment = None
+        segment_id = None
         with self.lock:
+            self._wakeword_followup_generation += 1
+            self._clear_recorder_followup_gate_locked()
             if not self.service.try_activate_speaker(self.session_id):
                 self.reject_current_recording = True
                 self.recording_sample_count = 0
                 self._force_finalize_in_progress = False
+                self._wakeword_voice_window = False
                 self.rejected_audio_chunks += 1
                 self.service.manager.publish_session(
                     self.session_id,
@@ -1701,20 +2221,283 @@ class RecorderBackedRealtimeSession:
                 self.reject_current_recording = False
                 self.recording_sample_count = 0
                 self._force_finalize_in_progress = False
+                self._wakeword_voice_window = False
+                segment_id = self.segment_state.current()
+                segment = self.timeline.mark_recording_started(segment_id)
+        if segment is not None:
+            self._publish_timeline_event(
+                "recording_started",
+                timestamp=segment.get("recordingStartedAt"),
+                segment_id=segment_id,
+                segment=segment,
+                preRecordingBuffer=segment.get("preRecordingBuffer"),
+            )
         self.publish_status("recording")
 
     def _on_recording_stop(self):
         self._trim_recorded_audio_queue()
+        segment = None
+        segment_id = None
         with self.lock:
+            segment_id = self.segment_state.current()
+            duration_seconds = (
+                self.recording_sample_count / float(SERVER_SAMPLE_RATE)
+                if self.recording_sample_count
+                else None
+            )
+            segment = self.timeline.mark_recording_ended(
+                "recording_stop",
+                segment_id=segment_id,
+                actual_duration_seconds=duration_seconds,
+            )
             self.recording_sample_count = 0
             self._force_finalize_in_progress = False
+            self._wakeword_voice_window = False
         self.service.deactivate_speaker(self.session_id)
-        self.publish_status("listening" if self.streaming else "idle")
+        if segment is not None:
+            self._publish_timeline_event(
+                "recording_ended",
+                timestamp=segment.get("recordingEndedAt"),
+                segment_id=segment_id,
+                segment=segment,
+                durationSeconds=segment.get("durationSeconds"),
+                reason=segment.get("endReason"),
+            )
+        self._start_wakeword_followup_window()
+        self.publish_status(self._waiting_state_locked())
 
     def _on_transcription_start(self, *_):
+        segment_id = self.segment_state.current()
+        self._publish_timeline_event(
+            "transcription_started",
+            segment_id=segment_id,
+            segment=self._timeline_snapshot(segment_id),
+        )
         self.publish_status("transcribing")
         with self.lock:
             return True if self.reject_current_recording else False
+
+    def _waiting_state_locked(self, streaming=None):
+        if streaming is None:
+            streaming = self.streaming
+        if not streaming:
+            return "idle"
+        if self.settings.wake_word_enabled():
+            if self._wakeword_voice_window:
+                return "wakeword_detected"
+            return "wakeword_wait"
+        return "listening"
+
+    def _start_wakeword_followup_window(self):
+        try:
+            window = max(0.0, float(self.settings.wake_word_followup_window))
+        except (TypeError, ValueError):
+            window = 0.0
+        if not self.settings.wake_word_enabled() or window <= 0:
+            return False
+
+        with self.lock:
+            if not self.streaming or self.reject_current_recording:
+                return False
+            self._wakeword_voice_window = True
+            self._wakeword_followup_generation += 1
+            generation = self._wakeword_followup_generation
+            recorder = self.recorder
+            try:
+                if self._recorder_wake_word_timeout_before_followup is None:
+                    self._recorder_wake_word_timeout_before_followup = getattr(
+                        recorder,
+                        "wake_word_timeout",
+                        None,
+                    )
+                if self._recorder_start_recording_before_followup is None:
+                    self._recorder_start_recording_before_followup = getattr(
+                        recorder,
+                        "start_recording_on_voice_activity",
+                        None,
+                    )
+                if self._recorder_stop_recording_before_followup is None:
+                    self._recorder_stop_recording_before_followup = getattr(
+                        recorder,
+                        "stop_recording_on_voice_deactivity",
+                        None,
+                    )
+                recorder.wakeword_detected = True
+                recorder.wake_word_detect_time = time.time()
+                recorder.wake_word_timeout = window
+                recorder.start_recording_on_voice_activity = True
+                recorder.stop_recording_on_voice_deactivity = True
+            except Exception:
+                self._wakeword_voice_window = False
+                self._clear_recorder_followup_gate_locked()
+                LOGGER.debug(
+                    "Could not arm wake-word follow-up window for %s",
+                    self.session_id,
+                    exc_info=True,
+                )
+                return False
+
+        self._publish_timeline_event(
+            "wakeword_followup_started",
+            durationSeconds=window,
+        )
+        threading.Thread(
+            target=self._wakeword_followup_timeout_worker,
+            args=(generation, window),
+            name=f"RealtimeSTTSessionWakeFollowup-{self.session_id}",
+            daemon=True,
+        ).start()
+        return True
+
+    def _wakeword_followup_timeout_worker(self, generation, window):
+        time.sleep(window)
+        self._finish_wakeword_followup(generation)
+
+    def _finish_wakeword_followup(self, generation=None):
+        with self.lock:
+            if generation is not None and generation != self._wakeword_followup_generation:
+                return False
+            if not self._wakeword_voice_window:
+                return False
+            if bool(getattr(self.recorder, "is_recording", False)):
+                return False
+            self._wakeword_voice_window = False
+            self._wakeword_followup_generation += 1
+            self._clear_recorder_followup_gate_locked()
+            streaming = self.streaming
+
+        self._publish_timeline_event("wakeword_followup_timeout")
+        self.publish_status("wakeword_wait" if streaming else "idle")
+        return True
+
+    def _clear_recorder_followup_gate_locked(self):
+        recorder = self.recorder
+        try:
+            recorder.wakeword_detected = False
+            recorder.wake_word_detect_time = 0
+            if self._recorder_wake_word_timeout_before_followup is not None:
+                recorder.wake_word_timeout = self._recorder_wake_word_timeout_before_followup
+            if self._recorder_start_recording_before_followup is not None:
+                recorder.start_recording_on_voice_activity = (
+                    self._recorder_start_recording_before_followup
+                )
+            if self._recorder_stop_recording_before_followup is not None:
+                recorder.stop_recording_on_voice_deactivity = (
+                    self._recorder_stop_recording_before_followup
+                )
+        except Exception:
+            LOGGER.debug(
+                "Could not clear wake-word follow-up gate for %s",
+                self.session_id,
+                exc_info=True,
+            )
+        self._recorder_wake_word_timeout_before_followup = None
+        self._recorder_start_recording_before_followup = None
+        self._recorder_stop_recording_before_followup = None
+
+    def _on_vad_start(self):
+        self.publish_status(self._voice_or_waiting_state())
+
+    def _on_vad_stop(self):
+        self.publish_status(self._silence_or_waiting_state())
+
+    def _on_vad_detect_start(self):
+        self.publish_status(self._voice_or_waiting_state())
+
+    def _on_vad_detect_stop(self):
+        self.publish_status(self._silence_or_waiting_state())
+
+    def _voice_or_waiting_state(self):
+        with self.lock:
+            if not self.settings.wake_word_enabled():
+                return "voice"
+            if self._wakeword_voice_window:
+                return "voice"
+            return self._waiting_state_locked()
+
+    def _silence_or_waiting_state(self):
+        with self.lock:
+            if not self.settings.wake_word_enabled():
+                return "silence"
+            if self._wakeword_voice_window:
+                return "silence"
+            return self._waiting_state_locked()
+
+    def _on_wakeword_detection_start(self):
+        with self.lock:
+            self._wakeword_voice_window = False
+            self._wakeword_followup_generation += 1
+            self._clear_recorder_followup_gate_locked()
+        event = self.timeline.mark_wakeword_wait_started()
+        self._publish_timeline_event(
+            "wakeword_wait_started",
+            wakeWord=event.get("wakeWord"),
+        )
+        self.publish_status("wakeword_wait")
+
+    def _on_wakeword_detection_end(self):
+        event = self.timeline.mark_wakeword_wait_ended()
+        self._publish_timeline_event(
+            "wakeword_wait_ended",
+            wakeWord=event.get("wakeWord"),
+        )
+
+    def _on_wakeword_detected(self):
+        with self.lock:
+            self._wakeword_voice_window = True
+            self._wakeword_followup_generation += 1
+        event = self.timeline.mark_wakeword_detected()
+        self._publish_timeline_event(
+            "wakeword_detected",
+            wakeWord=event.get("wakeWord"),
+        )
+        self.publish_status("wakeword_detected")
+
+    def _on_wakeword_timeout(self):
+        with self.lock:
+            self._wakeword_voice_window = False
+            self._wakeword_followup_generation += 1
+            self._clear_recorder_followup_gate_locked()
+        event = self.timeline.mark_wakeword_timeout()
+        self._publish_timeline_event(
+            "wakeword_timeout",
+            wakeWord=event.get("wakeWord"),
+        )
+        self.publish_status("wakeword_timeout")
+
+    def _publish_timeline_event(
+        self,
+        event,
+        *,
+        timestamp=None,
+        segment_id=None,
+        segment=None,
+        **fields,
+    ):
+        if not hasattr(self, "timeline"):
+            return
+        timestamp = time.time() if timestamp is None else float(timestamp)
+        payload = {
+            "type": "timeline",
+            "sessionId": self.session_id,
+            "event": event,
+            "timestamp": timestamp,
+            "timestampIso": timestamp_iso(timestamp),
+        }
+        if segment_id is not None:
+            payload["segmentId"] = segment_id
+        if segment is not None:
+            payload["segment"] = segment
+        for key, value in fields.items():
+            if value is not None:
+                payload[key] = value
+        self.service.manager.publish_session(self.session_id, payload)
+
+    def _timeline_snapshot(self, segment_id=None):
+        timeline = getattr(self, "timeline", None)
+        if timeline is None:
+            return None
+        return timeline.snapshot(segment_id)
 
     def _recorder_queue_depth(self):
         depth = 0
@@ -2077,6 +2860,53 @@ class RealtimeSTTService:
             "realtimeDegradationThresholdMs": self.settings.realtime_degradation_threshold_ms,
         }
 
+    def runtime_settings_contract(self):
+        return runtime_settings_contract()
+
+    def update_settings(self, updates):
+        applied = {}
+        rejected = {}
+        if not isinstance(updates, dict):
+            raise ValueError("settings update must be a JSON object")
+
+        for name, value in updates.items():
+            if name in STARTUP_ONLY_SETTINGS:
+                rejected[name] = {
+                    "reason": "startup_only",
+                    "message": "This setting requires a server restart because shared resources are already initialized.",
+                }
+                continue
+            if name not in ACTIVE_RUNTIME_SETTINGS and name not in NEW_SESSION_RUNTIME_SETTINGS:
+                rejected[name] = {
+                    "reason": "unknown",
+                    "message": "Unknown or unsupported server setting.",
+                }
+                continue
+            try:
+                coerced = coerce_setting_value(name, value)
+            except ValueError as exc:
+                rejected[name] = {
+                    "reason": "invalid_value",
+                    "message": str(exc),
+                }
+                continue
+            setattr(self.settings, name, coerced)
+            applied[name] = {
+                "value": coerced,
+                "appliesTo": (
+                    "active_sessions"
+                    if name in ACTIVE_RUNTIME_SETTINGS
+                    else "new_sessions"
+                ),
+            }
+
+        return {
+            "applied": applied,
+            "rejected": rejected,
+            "settings": self.settings.public_dict(),
+            "runtimeSettings": self.runtime_settings_contract(),
+        }
+
     def transcribe_for_recorder(self, session_id, kind, audio, language, use_prompt):
         from RealtimeSTT.transcription_engines import TranscriptionResult
 
@@ -2187,6 +3017,7 @@ class RealtimeSTTService:
             "type": "ready",
             "settings": self.settings.public_dict(),
             "limits": self.limits_dict(),
+            "runtimeSettings": self.runtime_settings_contract(),
             "ok": self.scheduler.healthy(),
         }
         self.manager.publish_all(ready_message)
@@ -2338,7 +3169,23 @@ def create_app(settings: Optional[ServerSettings] = None, scheduler_factory=None
             "settings": settings.public_dict(),
             "limits": service.limits_dict(),
             "supportedEngines": get_supported_transcription_engines(),
+            "runtimeSettings": service.runtime_settings_contract(),
         })
+
+    @app.patch("/api/config")
+    async def update_config(payload: dict):
+        updates = payload.get("settings", payload)
+        try:
+            result = service.update_settings(updates)
+        except ValueError as exc:
+            return JSONResponse(
+                {"error": str(exc)},
+                status_code=400,
+            )
+        return JSONResponse(
+            result,
+            status_code=400 if result["rejected"] else 200,
+        )
 
     @app.get("/api/metrics")
     async def metrics():
@@ -2367,6 +3214,7 @@ def create_app(settings: Optional[ServerSettings] = None, scheduler_factory=None
             "settings": settings.public_dict(),
             "limits": service.limits_dict(),
             "supportedEngines": get_supported_transcription_engines(),
+            "runtimeSettings": service.runtime_settings_contract(),
         }))
         if service.ready.is_set():
             await websocket.send_text(json.dumps({
@@ -2374,6 +3222,7 @@ def create_app(settings: Optional[ServerSettings] = None, scheduler_factory=None
                 "sessionId": session_id,
                 "settings": settings.public_dict(),
                 "limits": service.limits_dict(),
+                "runtimeSettings": service.runtime_settings_contract(),
                 "ok": service.scheduler.healthy(),
             }))
             for error in service.startup_errors:
@@ -2512,6 +3361,15 @@ def parse_args(argv=None):
     parser.add_argument("--early-transcription-on-silence", type=float)
     parser.add_argument("--initial-prompt")
     parser.add_argument("--initial-prompt-realtime")
+    parser.add_argument("--wakeword-backend", default="")
+    parser.add_argument("--openwakeword-model-paths")
+    parser.add_argument("--openwakeword-inference-framework", default="onnx")
+    parser.add_argument("--wake-words", default="")
+    parser.add_argument("--wake-words-sensitivity", type=float, default=0.5)
+    parser.add_argument("--wake-word-activation-delay", type=float, default=0.0)
+    parser.add_argument("--wake-word-timeout", type=float, default=5.0)
+    parser.add_argument("--wake-word-buffer-duration", type=float, default=0.1)
+    parser.add_argument("--wake-word-followup-window", type=float, default=0.0)
     parser.add_argument("--use-main-model-for-realtime", action="store_true")
     parser.add_argument("--audio-queue-size", type=int, default=128)
     parser.add_argument("--max-audio-packet-bytes", type=int, default=512 * 1024)
@@ -2599,6 +3457,18 @@ def settings_from_args(args):
         early_transcription_on_silence=_value_or_default(args, defaults, "early_transcription_on_silence"),
         initial_prompt=args.initial_prompt,
         initial_prompt_realtime=args.initial_prompt_realtime,
+        wakeword_backend=(
+            args.wakeword_backend
+            or ("pvporcupine" if args.wake_words else "")
+        ),
+        openwakeword_model_paths=args.openwakeword_model_paths,
+        openwakeword_inference_framework=args.openwakeword_inference_framework,
+        wake_words=args.wake_words,
+        wake_words_sensitivity=args.wake_words_sensitivity,
+        wake_word_activation_delay=args.wake_word_activation_delay,
+        wake_word_timeout=args.wake_word_timeout,
+        wake_word_buffer_duration=args.wake_word_buffer_duration,
+        wake_word_followup_window=args.wake_word_followup_window,
         use_main_model_for_realtime=args.use_main_model_for_realtime,
         audio_queue_size=args.audio_queue_size,
         max_audio_packet_bytes=args.max_audio_packet_bytes,
