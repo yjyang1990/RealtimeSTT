@@ -90,6 +90,13 @@ if __name__ == "__main__":
 More examples are in [docs/quick-start.md](docs/quick-start.md) and
 [docs/external-audio.md](docs/external-audio.md).
 
+## Configuration Reference
+
+Every `AudioToTextRecorder` constructor parameter is documented in
+[docs/configuration.md](docs/configuration.md), including model/engine
+selection, realtime transcription, VAD timing, wake words, callbacks, external
+audio, logging, and executor injection.
+
 ## Features
 
 - Voice activity detection with WebRTC VAD and Silero VAD.

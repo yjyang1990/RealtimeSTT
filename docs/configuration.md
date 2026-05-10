@@ -4,6 +4,9 @@
 reference for its constructor. Examples and recommended starting patterns live
 in [quick-start.md](quick-start.md).
 
+This page covers every public constructor parameter, grouped by purpose so the
+reference stays searchable without making the README too large.
+
 ```python
 from RealtimeSTT import AudioToTextRecorder
 
