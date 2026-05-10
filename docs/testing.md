@@ -15,7 +15,7 @@ Manual demos, regression harnesses, and legacy experiments directly under
 From the repository root:
 
 ```powershell
-python -m unittest -v tests.unit.test_audio_fixtures tests.unit.test_whisper_cpp_engine tests.unit.test_openai_whisper_engine tests.unit.test_additional_transcription_engines tests.unit.test_cohere_transcribe_engine tests.unit.test_granite_speech_engine tests.unit.test_moonshine_engine tests.unit.test_sherpa_onnx_engine tests.unit.test_fastapi_server_protocol tests.unit.test_fastapi_server_multi_user
+python -m unittest -v tests.unit.test_audio_fixtures tests.unit.test_whisper_cpp_engine tests.unit.test_openai_whisper_engine tests.unit.test_additional_transcription_engines tests.unit.test_cohere_transcribe_engine tests.unit.test_granite_speech_engine tests.unit.test_moonshine_engine tests.unit.test_sherpa_onnx_engine tests.unit.test_kroko_onnx_engine tests.unit.test_fastapi_server_protocol tests.unit.test_fastapi_server_multi_user
 ```
 
 Use the Python executable from your active virtual environment. In this workspace that can also be run explicitly as `D:\Projekte\STT\RealtimeSTT\test_env\Scripts\python.exe`.
@@ -40,7 +40,7 @@ python -m unittest -v tests.unit.test_audio_fixtures.GoldenTranscriptionTests
 Run the whisper.cpp golden test:
 
 ```powershell
-python -m pip install pywhispercpp
+python -m pip install "RealtimeSTT[whisper-cpp]"
 
 $env:REALTIMESTT_RUN_WHISPER_CPP = "1"
 $env:REALTIMESTT_WHISPER_CPP_MODEL = "tiny.en"
@@ -121,6 +121,28 @@ python -m unittest -v tests.unit.test_audio_fixtures tests.unit.test_whisper_cpp
 
 The `test-model-cache/` directory is ignored by Git and can safely hold downloaded local test models.
 
+Run the Kroko-ONNX contract tests:
+
+```powershell
+python -m unittest -v tests.unit.test_kroko_onnx_engine
+```
+
+The fast Kroko tests use fake runtime objects and do not install or import
+Kroko-ONNX. For a real-model smoke test, install Kroko-ONNX in the active
+environment, download a `.data` model from `Banafo/Kroko-ASR`, and opt in:
+
+```powershell
+$env:REALTIMESTT_RUN_KROKO_ONNX = "1"
+$env:REALTIMESTT_KROKO_ONNX_MODEL = "test-model-cache\kroko-onnx\Kroko-EN-Community-64-L-Streaming-001.data"
+$env:REALTIMESTT_KROKO_ONNX_PROVIDER = "cpu"
+$env:REALTIMESTT_KROKO_ONNX_NUM_THREADS = "1"
+
+python -m unittest -v tests.unit.test_kroko_onnx_engine.KrokoOnnxGoldenTranscriptionTests
+```
+
+`REALTIMESTT_KROKO_ONNX_KEY` can be set for licensed Pro models. Do not store
+keys in command history, docs, or committed files.
+
 ## FastAPI Multi-User Load Test
 
 The FastAPI browser server has fast fake-scheduler tests for session isolation,
@@ -200,6 +222,27 @@ example_fastapi_server\run_multi_user_perf.cmd
 Use the `REALTIMESTT_FASTAPI_ASR_*` environment variables documented in
 `example_fastapi_server\README.md` to select CPU sherpa-onnx Moonshine,
 whisper.cpp, Parakeet, or another installed backend.
+
+Kroko-ONNX uses the same generic FastAPI harness path:
+
+```powershell
+$env:REALTIMESTT_RUN_FASTAPI_MULTI_USER_PERF = "1"
+$env:REALTIMESTT_FASTAPI_ASR_CLIENTS = "2"
+$env:REALTIMESTT_FASTAPI_ASR_ENGINE = "kroko_onnx"
+$env:REALTIMESTT_FASTAPI_ASR_MODEL = "test-model-cache\kroko-onnx\Kroko-EN-Community-64-L-Streaming-001.data"
+$env:REALTIMESTT_FASTAPI_ASR_REALTIME_ENGINE = "kroko_onnx"
+$env:REALTIMESTT_FASTAPI_ASR_REALTIME_MODEL = "test-model-cache\kroko-onnx\Kroko-EN-Community-64-L-Streaming-001.data"
+$env:REALTIMESTT_FASTAPI_ASR_DEVICE = "cpu"
+$env:REALTIMESTT_FASTAPI_ASR_ENGINE_OPTIONS = "provider=cpu,num_threads=2"
+$env:REALTIMESTT_FASTAPI_ASR_REALTIME_ENGINE_OPTIONS = "provider=cpu,num_threads=1"
+$env:REALTIMESTT_FASTAPI_ASR_METRICS_JSON = "test-results\kroko-onnx-fastapi-cpu-2clients.json"
+
+python -m unittest -v tests.unit.test_fastapi_server_multi_user_asr_integration.FastAPIMultiUserRealEngineASRTests
+```
+
+For CUDA, switch `REALTIMESTT_FASTAPI_ASR_DEVICE` and both provider options to
+`cuda` after confirming the installed Kroko-ONNX build has CUDA provider
+support.
 
 ## Windows Notes
 

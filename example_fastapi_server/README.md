@@ -34,6 +34,17 @@ For CPU sherpa-onnx Moonshine:
 python -m pip install sherpa-onnx
 ```
 
+For Kroko-ONNX:
+
+```bash
+git clone https://github.com/kroko-ai/kroko-onnx.git
+cd kroko-onnx
+python -m pip install .
+```
+
+Kroko-ONNX is currently Linux/Docker-oriented upstream. If native Windows builds
+fail, use WSL2/Linux and run this server from that environment.
+
 ## Run
 
 Default faster-whisper setup:
@@ -203,6 +214,27 @@ For lower memory usage, use Tiny for both final and realtime transcription:
 D:\Projekte\STT\RealtimeSTT\test_env\Scripts\python.exe example_fastapi_server\server.py --host 0.0.0.0 --port 8010 --engine sherpa_onnx_moonshine --model sherpa-onnx-moonshine-tiny-en-int8 --realtime-engine sherpa_onnx_moonshine --realtime-model sherpa-onnx-moonshine-tiny-en-int8 --device cpu --language en --download-root test-model-cache\sherpa-onnx --engine-options "{\"num_threads\":2,\"provider\":\"cpu\"}" --realtime-engine-options "{\"num_threads\":2,\"provider\":\"cpu\"}" --realtime-processing-pause 0.8 --realtime-use-syllable-boundaries --realtime-boundary-detector-sensitivity 0.6 --realtime-boundary-followup-delays 0.1,0.2,0.4
 ```
 
+### Kroko-ONNX CPU
+
+Download the community English model once:
+
+```cmd
+mkdir test-model-cache\kroko-onnx
+python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='Banafo/Kroko-ASR', filename='Kroko-EN-Community-64-L-Streaming-001.data', local_dir='test-model-cache/kroko-onnx')"
+```
+
+Run Kroko for both final and realtime:
+
+```cmd
+python example_fastapi_server\server.py --host 0.0.0.0 --port 8010 --engine kroko_onnx --model test-model-cache\kroko-onnx\Kroko-EN-Community-64-L-Streaming-001.data --realtime-engine kroko_onnx --realtime-model test-model-cache\kroko-onnx\Kroko-EN-Community-64-L-Streaming-001.data --device cpu --language en --engine-options "{\"provider\":\"cpu\",\"num_threads\":2}" --realtime-engine-options "{\"provider\":\"cpu\",\"num_threads\":1}"
+```
+
+Or use Kroko for final text with a lighter realtime engine:
+
+```cmd
+python example_fastapi_server\server.py --host 0.0.0.0 --port 8010 --engine kroko_onnx --model test-model-cache\kroko-onnx\Kroko-EN-Community-64-L-Streaming-001.data --realtime-engine whisper_cpp --realtime-model tiny.en --device cpu --language en --engine-options "{\"provider\":\"cpu\",\"num_threads\":2}"
+```
+
 ## Tuning Profiles
 
 Whisper-family engines can use `--beam-size` and `--beam-size-realtime` as a
@@ -271,6 +303,7 @@ accepted and normalized, so these work:
 - `openai_whisper`
 - `parakeet` / `nvidia-parakeet`
 - `sherpa-onnx-parakeet`
+- `kroko-onnx` / `kroko` / `banafo-kroko`
 - `cohere-transcribe`
 - `granite-speech`
 - `qwen3-asr`
@@ -333,6 +366,19 @@ REALTIMESTT_FASTAPI_ASR_REALTIME_ENGINE_OPTIONS='{"num_threads":2,"provider":"cp
 REALTIMESTT_FASTAPI_ASR_REALTIME_PROCESSING_PAUSE=0.8
 REALTIMESTT_FASTAPI_ASR_REALTIME_USE_SYLLABLE_BOUNDARIES=1
 REALTIMESTT_FASTAPI_ASR_REALTIME_BOUNDARY_FOLLOWUP_DELAYS=0.1,0.2,0.4
+```
+
+For Kroko-ONNX performance runs, select Kroko through the same generic
+variables:
+
+```bash
+REALTIMESTT_FASTAPI_ASR_ENGINE=kroko_onnx
+REALTIMESTT_FASTAPI_ASR_MODEL=test-model-cache/kroko-onnx/Kroko-EN-Community-64-L-Streaming-001.data
+REALTIMESTT_FASTAPI_ASR_REALTIME_ENGINE=kroko_onnx
+REALTIMESTT_FASTAPI_ASR_REALTIME_MODEL=test-model-cache/kroko-onnx/Kroko-EN-Community-64-L-Streaming-001.data
+REALTIMESTT_FASTAPI_ASR_DEVICE=cpu
+REALTIMESTT_FASTAPI_ASR_ENGINE_OPTIONS=provider=cpu,num_threads=2
+REALTIMESTT_FASTAPI_ASR_REALTIME_ENGINE_OPTIONS=provider=cpu,num_threads=1
 ```
 
 The engine option variables also accept `key=value` lists, for example

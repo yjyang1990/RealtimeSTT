@@ -4,6 +4,7 @@ batch/
 test_env/
 tests_private/
 docs_private/
+docs/development/
 dev-log/
 roadmap/
 env_realtimestt/
@@ -151,6 +152,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.venvs/
 env/
 myenv/
 venv/

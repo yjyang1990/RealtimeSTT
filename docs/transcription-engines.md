@@ -11,11 +11,12 @@ The compatibility default is `faster_whisper`.
 
 | Use case | Start with | Why |
 | --- | --- | --- |
-| Default local GPU/CPU Whisper path | `faster_whisper` | Included by default, mature, supports common Whisper model names and CTranslate2 models. |
+| Default local GPU/CPU Whisper path | `faster_whisper` | Install with `RealtimeSTT[faster-whisper]`; mature, supports common Whisper model names and CTranslate2 models. |
 | CPU-only experiments with small Whisper models | `whisper_cpp` | Uses whisper.cpp through `pywhispercpp`; good for low-dependency CPU testing. |
 | Compatibility with OpenAI's local Whisper package | `openai_whisper` | Uses the original `openai-whisper` Python package. |
 | English CPU server with manually downloaded ONNX models | `sherpa_onnx_moonshine` | Offline CPU INT8 path with predictable local model files. |
 | CPU Parakeet without NeMo runtime | `sherpa_onnx_parakeet` | Offline CPU INT8 Parakeet through sherpa-onnx. |
+| Kroko/Banafo `.data` streaming models | `kroko_onnx` | Optional Kroko-ONNX runtime with community or licensed Kroko models. |
 | NVIDIA Parakeet on Linux/WSL2 | `parakeet` | Uses NVIDIA NeMo ASR for the Parakeet checkpoint. |
 | Hugging Face speech-language models | `granite_speech`, `qwen3_asr`, `moonshine`, `cohere_transcribe` | Thin adapters around model-family packages and Transformers. |
 
@@ -31,6 +32,7 @@ CLI-style names work where listed.
 | `openai_whisper` | Optional production backend | [engines/openai-whisper.md](engines/openai-whisper.md) |
 | `moonshine`, `moonshine_streaming` | Experimental Transformers backend; English-only adapter | [engines/moonshine.md](engines/moonshine.md) |
 | `sherpa_onnx_moonshine`, `sherpa_moonshine`, `moonshine_sherpa_onnx` | CPU INT8 sherpa-onnx backend | [engines/sherpa-onnx.md](engines/sherpa-onnx.md) |
+| `kroko_onnx`, `kroko`, `banafo_kroko` | Optional Kroko-ONNX backend | [engines/kroko-onnx.md](engines/kroko-onnx.md) |
 | `parakeet`, `nvidia_parakeet` | Experimental NVIDIA NeMo backend | [engines/parakeet-nemo.md](engines/parakeet-nemo.md) |
 | `sherpa_onnx_parakeet`, `sherpa_parakeet`, `parakeet_sherpa_onnx` | CPU INT8 sherpa-onnx backend | [engines/sherpa-onnx.md](engines/sherpa-onnx.md) |
 | `granite_speech`, `granite` | Experimental Transformers backend | [engines/hf-transformers.md](engines/hf-transformers.md) |
@@ -105,6 +107,7 @@ meaningful for one engine may be ignored or invalid for another.
 | `moonshine`, `granite_speech`, `qwen3_asr`, `cohere_transcribe` | Yes, through Hugging Face or the engine package, subject to access. | `download_root` maps to cache options where supported. |
 | `parakeet` NeMo | Yes, through NeMo model loading. | NeMo cache/model options may be passed in `transcription_engine_options`. |
 | `sherpa_onnx_*` | No. | Download and extract the sherpa-onnx model bundle, then pass the extracted directory. |
+| `kroko_onnx` | No. | Download a Kroko `.data` model from Banafo/Kroko-ASR or Kroko, then pass the file path. |
 
 Every optional engine page documents its install command, model behavior,
 important options, and troubleshooting notes.

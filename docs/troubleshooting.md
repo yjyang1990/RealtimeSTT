@@ -15,14 +15,14 @@ Linux:
 ```bash
 sudo apt-get update
 sudo apt-get install python3-dev portaudio19-dev
-python -m pip install RealtimeSTT
+python -m pip install "RealtimeSTT[faster-whisper]"
 ```
 
 macOS:
 
 ```bash
 brew install portaudio
-python -m pip install RealtimeSTT
+python -m pip install "RealtimeSTT[faster-whisper]"
 ```
 
 Windows users should prefer wheels from PyPI where available and install from a

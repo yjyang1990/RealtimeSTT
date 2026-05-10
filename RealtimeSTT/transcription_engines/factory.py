@@ -24,6 +24,9 @@ ENGINE_CLASS_PATHS = {
     "sherpa_onnx_moonshine": (".sherpa_onnx_engine", "SherpaOnnxMoonshineEngine"),
     "sherpa_moonshine": (".sherpa_onnx_engine", "SherpaOnnxMoonshineEngine"),
     "moonshine_sherpa_onnx": (".sherpa_onnx_engine", "SherpaOnnxMoonshineEngine"),
+    "kroko_onnx": (".kroko_onnx_engine", "KrokoOnnxEngine"),
+    "kroko": (".kroko_onnx_engine", "KrokoOnnxEngine"),
+    "banafo_kroko": (".kroko_onnx_engine", "KrokoOnnxEngine"),
 }
 
 

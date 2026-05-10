@@ -123,11 +123,11 @@ For file streams, websocket clients, and process pipelines, see
 
 ## CPU-Friendly Engine Example
 
-The default `faster_whisper` path is the supported first install path. For
-CPU-focused local testing with whisper.cpp:
+The recommended `faster_whisper` path is installed with
+`RealtimeSTT[faster-whisper]`. For CPU-focused local testing with whisper.cpp:
 
 ```bash
-python -m pip install pywhispercpp
+python -m pip install "RealtimeSTT[whisper-cpp]"
 ```
 
 ```python

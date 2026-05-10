@@ -90,7 +90,7 @@ python tests/realtime_transcription_count_comparison.py --mode both
 whisper.cpp interactive demo:
 
 ```bash
-python -m pip install pywhispercpp rich pyautogui colorama
+python -m pip install "RealtimeSTT[whisper-cpp]" rich pyautogui colorama
 python tests/realtimestt_test_whispercpp.py --profile balanced
 ```
 

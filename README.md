@@ -6,18 +6,13 @@ wake words, and direct access to audio streams. It is designed for assistants,
 dictation tools, browser streaming servers, and prototypes that need to turn
 speech into text with only a few lines of code.
 
-The default path uses `faster_whisper`. Other engines are available when their
-optional dependencies and models are installed.
-
-## Project Status
-
-RealtimeSTT is community-driven. High-quality pull requests are welcome, while
-maintainer availability for new features and support may be limited.
+The recommended default path uses `faster_whisper`. Other engines are available
+through install extras when their optional dependencies and models are present.
 
 ## Install
 
 ```bash
-pip install RealtimeSTT
+pip install "RealtimeSTT[faster-whisper]"
 ```
 
 On Linux, install PortAudio headers before installing the package:

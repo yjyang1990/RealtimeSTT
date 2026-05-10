@@ -7,9 +7,9 @@ The class employs a pluggable transcription engine to transcribe the recorded
 audio into text using machine learning models, which can be run either on a GPU or
 CPU. Voice activity detection (VAD) is built in, meaning the software can
 automatically start or stop recording based on the presence or absence of
-speech. It integrates wake word detection through the pvporcupine library,
-allowing the software to initiate recording when a specific word or phrase
-is spoken. The system provides real-time feedback and can be further
+speech. It integrates optional wake word detection through Porcupine or
+OpenWakeWord, allowing the software to initiate recording when a specific word
+or phrase is spoken. The system provides real-time feedback and can be further
 customized.
 
 Features:
@@ -26,8 +26,8 @@ Author: Kolja Beigel
 
 """
 
+from importlib import import_module
 from typing import Callable, Iterable, List, Optional, Union
-from openwakeword.model import Model
 import torch.multiprocessing as mp
 from scipy.signal import resample
 import signal as system_signal
@@ -44,10 +44,8 @@ from .transcription_engines import (
     create_transcription_engine,
 )
 import soundfile as sf
-import openwakeword
 import collections
 import numpy as np
-import pvporcupine
 import traceback
 import threading
 import webrtcvad
@@ -96,6 +94,46 @@ INT16_MAX_ABS_VALUE = 32768.0
 INIT_HANDLE_BUFFER_OVERFLOW = False
 if platform.system() != 'Darwin':
     INIT_HANDLE_BUFFER_OVERFLOW = True
+
+PORCUPINE_WAKEWORD_BACKENDS = {"pvp", "pvporcupine", "porcupine"}
+OPENWAKEWORD_BACKENDS = {
+    "oww",
+    "openwakeword",
+    "openwakewords",
+    "open_wakeword",
+    "open_wakewords",
+}
+
+
+def _normalize_wakeword_backend(wakeword_backend, wake_words):
+    backend = (wakeword_backend or "").strip().lower().replace("-", "_")
+    if not backend and wake_words:
+        return "pvporcupine"
+    return backend
+
+
+def _load_porcupine_module():
+    try:
+        return import_module("pvporcupine")
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "Porcupine wake word detection requires the optional "
+            "'pvporcupine' package. Install it with "
+            "'pip install \"RealtimeSTT[porcupine]\"'."
+        ) from exc
+
+
+def _load_openwakeword_modules():
+    try:
+        openwakeword_module = import_module("openwakeword")
+        model_module = import_module("openwakeword.model")
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "OpenWakeWord wake word detection requires the optional "
+            "'openwakeword' package. Install it with "
+            "'pip install \"RealtimeSTT[openwakeword]\"'."
+        ) from exc
+    return openwakeword_module, model_module.Model
 
 
 class TranscriptionWorker:
@@ -489,11 +527,8 @@ class AudioToTextRecorder:
         - wakeword_backend (str, default=""): Specifies the backend library to
             use for wake word detection. Supported options include 'pvporcupine'
             for using the Porcupine wake word engine or 'oww' for using the
-            OpenWakeWord engine.
-        - wakeword_backend (str, default="pvporcupine"): Specifies the backend
-            library to use for wake word detection. Supported options include
-            'pvporcupine' for using the Porcupine wake word engine or 'oww' for
-            using the OpenWakeWord engine.
+            OpenWakeWord engine. If wake_words is set and wakeword_backend is
+            empty, Porcupine is selected for backward compatibility.
         - openwakeword_model_paths (str, default=None): Comma-separated paths
             to model files for the openwakeword library. These paths point to
             custom models that can be used for wake word detection when the
@@ -734,7 +769,13 @@ class AudioToTextRecorder:
         self.initial_prompt = initial_prompt
         self.initial_prompt_realtime = initial_prompt_realtime
         self.suppress_tokens = suppress_tokens
-        self.use_wake_words = wake_words or wakeword_backend in {'oww', 'openwakeword', 'openwakewords'}
+        normalized_wakeword_backend = _normalize_wakeword_backend(
+            wakeword_backend,
+            wake_words,
+        )
+        self.use_wake_words = bool(
+            wake_words or normalized_wakeword_backend in OPENWAKEWORD_BACKENDS
+        )
         self.detected_language = None
         self.detected_language_probability = 0
         self.detected_realtime_language = None
@@ -925,21 +966,29 @@ class AudioToTextRecorder:
             )
 
         # Setup wake word detection
-        if wake_words or wakeword_backend in {'oww', 'openwakeword', 'openwakewords', 'pvp', 'pvporcupine'}:
-            self.wakeword_backend = wakeword_backend
+        if self.use_wake_words or normalized_wakeword_backend in PORCUPINE_WAKEWORD_BACKENDS:
+            self.wakeword_backend = normalized_wakeword_backend
 
             self.wake_words_list = [
                 word.strip() for word in wake_words.lower().split(',')
-            ]
+                if word.strip()
+            ] if wake_words else []
             self.wake_words_sensitivity = wake_words_sensitivity
             self.wake_words_sensitivities = [
                 float(wake_words_sensitivity)
                 for _ in range(len(self.wake_words_list))
             ]
 
-            if wake_words and self.wakeword_backend in {'pvp', 'pvporcupine'}:
+            if self.wakeword_backend in PORCUPINE_WAKEWORD_BACKENDS:
+                if not self.wake_words_list:
+                    raise ValueError(
+                        "Porcupine wake word detection requires wake_words. "
+                        "Pass a comma-separated Porcupine keyword list, or use "
+                        "wakeword_backend='openwakeword' for OpenWakeWord models."
+                    )
 
                 try:
+                    pvporcupine = _load_porcupine_module()
                     self.porcupine = pvporcupine.create(
                         keywords=self.wake_words_list,
                         sensitivities=self.wake_words_sensitivities
@@ -959,11 +1008,12 @@ class AudioToTextRecorder:
                     "Porcupine wake word detection engine initialized successfully"
                 )
 
-            elif wake_words and self.wakeword_backend in {'oww', 'openwakeword', 'openwakewords'}:
+            elif self.wakeword_backend in OPENWAKEWORD_BACKENDS:
                     
-                openwakeword.utils.download_models()
-
                 try:
+                    openwakeword, Model = _load_openwakeword_modules()
+                    openwakeword.utils.download_models()
+
                     if openwakeword_model_paths:
                         model_paths = openwakeword_model_paths.split(',')
                         self.owwModel = Model(
@@ -1002,7 +1052,10 @@ class AudioToTextRecorder:
                 )
             
             else:
-                logger.exception(f"Wakeword engine {self.wakeword_backend} unknown/unsupported or wake_words not specified. Please specify one of: pvporcupine, openwakeword.")
+                raise ValueError(
+                    f"Wakeword engine {self.wakeword_backend} unknown or unsupported. "
+                    "Please specify one of: pvporcupine, openwakeword."
+                )
 
 
         # Setup voice activity detection model WebRTC
@@ -1846,7 +1899,7 @@ class AudioToTextRecorder:
         """
         Processes audio data to detect wake words.
         """
-        if self.wakeword_backend in {'pvp', 'pvporcupine'}:
+        if self.wakeword_backend in PORCUPINE_WAKEWORD_BACKENDS:
             pcm = struct.unpack_from(
                 "h" * self.buffer_size,
                 data
@@ -1856,7 +1909,7 @@ class AudioToTextRecorder:
                 logger.info(f"wake words porcupine_index: {porcupine_index}")
             return porcupine_index
 
-        elif self.wakeword_backend in {'oww', 'openwakeword', 'openwakewords'}:
+        elif self.wakeword_backend in OPENWAKEWORD_BACKENDS:
             pcm = np.frombuffer(data, dtype=np.int16)
             prediction = self.owwModel.predict(pcm)
             max_score = -1

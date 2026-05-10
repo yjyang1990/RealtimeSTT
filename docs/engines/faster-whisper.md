@@ -6,16 +6,16 @@ Whisper model names plus local CTranslate2 model directories.
 
 ## Install
 
-`faster-whisper` is installed by the default RealtimeSTT package:
+Install the `faster-whisper` extra:
 
 ```bash
-pip install RealtimeSTT
+pip install "RealtimeSTT[faster-whisper]"
 ```
 
 If you are working from a source checkout:
 
 ```bash
-python -m pip install -r requirements.txt
+python -m pip install -e ".[faster-whisper]"
 ```
 
 ## Basic Use

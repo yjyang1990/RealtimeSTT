@@ -1,7 +1,25 @@
-from faster_whisper import BatchedInferencePipeline
-import faster_whisper
+from importlib import import_module
 
-from .base import BaseTranscriptionEngine, TranscriptionInfo, TranscriptionResult
+from .base import (
+    BaseTranscriptionEngine,
+    TranscriptionEngineError,
+    TranscriptionInfo,
+    TranscriptionResult,
+)
+
+
+def _load_faster_whisper():
+    try:
+        faster_whisper = import_module("faster_whisper")
+    except ModuleNotFoundError as exc:
+        raise TranscriptionEngineError(
+            "The 'faster_whisper' transcription engine requires the optional "
+            "'faster-whisper' package. Install it with "
+            "'pip install \"RealtimeSTT[faster-whisper]\"' or select a "
+            "different transcription engine."
+        ) from exc
+
+    return faster_whisper, faster_whisper.BatchedInferencePipeline
 
 
 class FasterWhisperEngine(BaseTranscriptionEngine):
@@ -9,6 +27,7 @@ class FasterWhisperEngine(BaseTranscriptionEngine):
 
     def __init__(self, config):
         super().__init__(config)
+        faster_whisper, batched_inference_pipeline = _load_faster_whisper()
         model = faster_whisper.WhisperModel(
             model_size_or_path=self.config.model,
             device=self.config.device,
@@ -17,7 +36,7 @@ class FasterWhisperEngine(BaseTranscriptionEngine):
             download_root=self.config.download_root,
         )
         if self.config.batch_size > 0:
-            model = BatchedInferencePipeline(model=model)
+            model = batched_inference_pipeline(model=model)
         self.model = model
 
     def transcribe(self, audio, language=None, use_prompt=True):

@@ -164,7 +164,7 @@ python example_fastapi_server/server.py \
 whisper.cpp CPU:
 
 ```bash
-python -m pip install pywhispercpp
+python -m pip install "RealtimeSTT[whisper-cpp]"
 python example_fastapi_server/server.py \
   --host 0.0.0.0 \
   --port 8010 \
@@ -196,6 +196,35 @@ python example_fastapi_server/server.py \
   --realtime-engine-options '{"num_threads":2,"provider":"cpu"}' \
   --realtime-processing-pause 0.8 \
   --realtime-use-syllable-boundaries
+```
+
+Kroko-ONNX CPU with the same model for final and realtime:
+
+```powershell
+$model = "test-model-cache\kroko-onnx\Kroko-EN-Community-64-L-Streaming-001.data"
+python example_fastapi_server\server.py `
+  --engine kroko_onnx `
+  --model $model `
+  --realtime-engine kroko_onnx `
+  --realtime-model $model `
+  --device cpu `
+  --language en `
+  --engine-options '{"provider":"cpu","num_threads":2}' `
+  --realtime-engine-options '{"provider":"cpu","num_threads":1}'
+```
+
+Kroko-ONNX final transcription with a lighter realtime engine:
+
+```powershell
+$model = "test-model-cache\kroko-onnx\Kroko-EN-Community-64-L-Streaming-001.data"
+python example_fastapi_server\server.py `
+  --engine kroko_onnx `
+  --model $model `
+  --realtime-engine whisper_cpp `
+  --realtime-model tiny.en `
+  --device cpu `
+  --language en `
+  --engine-options '{"provider":"cpu","num_threads":2}'
 ```
 
 Parakeet final transcription with a small realtime model:
@@ -339,6 +368,8 @@ More test details are in [testing.md](testing.md).
 
 - Use Linux or WSL2 for CUDA-heavy engines such as Parakeet, Qwen vLLM, and
   larger Transformers models.
+- Use Linux, WSL2, or Docker for Kroko-ONNX when native Windows builds fail;
+  upstream Windows and macOS build instructions are not yet published.
 - Keep model caches on persistent storage so restarts do not redownload models.
 - Put the server behind a reverse proxy when exposing it beyond localhost.
 - Size `--max-sessions`, `--max-active-speakers`, queue depths, and model lanes

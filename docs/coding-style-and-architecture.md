@@ -69,10 +69,9 @@ Use these files as local examples when making style decisions:
   `audio_recorder.py:64`, `audio_recorder.py:71`,
   `example_fastapi_server/server.py:40`, and
   `example_fastapi_server/protocol.py:7`.
-- **Legacy/Exception:** top-level imports of optional engines such as
-  `openwakeword`, `pvporcupine`, and `webrtcvad` in `audio_recorder.py:30`
-  through `audio_recorder.py:49` remain compatibility debt until those features
-  are extracted.
+- **Legacy/Exception:** WebRTC VAD and Silero/PyTorch are still core recorder
+  dependencies. Optional wake-word and transcription engine imports should stay
+  lazy so install extras can remain focused.
 
 ## File And Module Organization
 

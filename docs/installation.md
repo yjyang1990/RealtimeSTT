@@ -1,14 +1,24 @@
 # Installation
 
-The default supported path is the PyPI package with the default
-`faster_whisper` backend:
+RealtimeSTT uses install extras so each environment can install only the
+transcription engines and wake-word backends it needs.
+
+Recommended default local Whisper install:
 
 ```bash
-pip install RealtimeSTT
+python -m pip install "RealtimeSTT[faster-whisper]"
 ```
 
-This installs the core microphone, VAD, wake word, websocket client/server, and
-default transcription dependencies listed in `requirements.txt`.
+Core package only, without a transcription engine or wake-word backend:
+
+```bash
+python -m pip install RealtimeSTT
+```
+
+The core install includes microphone/audio support, WebRTC VAD, Silero VAD,
+websocket client/server dependencies, and shared audio utilities. It does not
+install `faster-whisper`, Porcupine, or OpenWakeWord unless you request those
+extras.
 
 ## Python Environment
 
@@ -18,7 +28,7 @@ Use a virtual environment when possible:
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip setuptools wheel
-python -m pip install RealtimeSTT
+python -m pip install "RealtimeSTT[faster-whisper]"
 ```
 
 On Windows PowerShell:
@@ -27,8 +37,50 @@ On Windows PowerShell:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -U pip setuptools wheel
-python -m pip install RealtimeSTT
+python -m pip install "RealtimeSTT[faster-whisper]"
 ```
+
+## Install Extras
+
+Extras can be combined with commas:
+
+```bash
+python -m pip install "RealtimeSTT[faster-whisper,porcupine]"
+python -m pip install "RealtimeSTT[whisper-cpp,openwakeword]"
+```
+
+| Extra | Installs | Use when |
+| --- | --- | --- |
+| `faster-whisper` | `faster-whisper` | Default CTranslate2 Whisper backend. |
+| `whisper-cpp` / `whispercpp` | `pywhispercpp` | whisper.cpp backend for CPU-focused setups. |
+| `openai-whisper` | `openai-whisper` | Original OpenAI Whisper Python backend. |
+| `sherpa-onnx` / `sherpa` | `sherpa-onnx` | CPU INT8 sherpa-onnx Parakeet or Moonshine engines. |
+| `transformers` | `transformers` | Shared dependency for Transformers-based ASR engines. |
+| `moonshine`, `granite`, `cohere` | `transformers` | Aliases for the corresponding Transformers engines. |
+| `parakeet` / `nvidia-parakeet` | `nemo_toolkit[asr]` | NVIDIA NeMo Parakeet backend, best on Linux or WSL2. |
+| `qwen` / `qwen3-asr` | `qwen-asr` | Qwen ASR backend. |
+| `qwen-vllm` | `qwen-asr[vllm]` | Qwen ASR with vLLM support. |
+| `porcupine` / `pvporcupine` / `pvp` | `pvporcupine` | Porcupine wake-word backend. |
+| `openwakeword` / `oww` | `openwakeword` | OpenWakeWord wake-word backend. |
+| `wakewords` / `wake-words` | `pvporcupine`, `openwakeword` | Both wake-word backends. |
+| `recommended` / `default` | `faster-whisper` | The default local transcription path. |
+| `all` | All PyPI-installable optional backends | Broad development or experimentation environments. |
+
+`kroko_onnx` is not included as a PyPI extra because the runtime is currently
+installed from the upstream source repository. See
+[engines/kroko-onnx.md](engines/kroko-onnx.md).
+
+## VAD Dependencies
+
+WebRTC VAD and Silero VAD are still core dependencies. The recorder currently
+initializes both `webrtcvad` and the Silero/PyTorch path, so they cannot be
+split into independent extras without changing the recorder's VAD selection
+logic.
+
+Wake-word dependencies are optional. If you do not use wake words, install no
+wake-word extra. If you set `wake_words` without a `wakeword_backend`,
+RealtimeSTT uses Porcupine for backward compatibility, so install the
+`porcupine` extra.
 
 ## Platform Notes
 
@@ -39,7 +91,7 @@ Install PortAudio and Python headers before installing PyAudio:
 ```bash
 sudo apt-get update
 sudo apt-get install python3-dev portaudio19-dev
-python -m pip install RealtimeSTT
+python -m pip install "RealtimeSTT[faster-whisper]"
 ```
 
 Some examples and tests also use `ffmpeg` or `libsndfile`:
@@ -54,7 +106,7 @@ Install PortAudio through Homebrew:
 
 ```bash
 brew install portaudio
-python -m pip install RealtimeSTT
+python -m pip install "RealtimeSTT[faster-whisper]"
 ```
 
 ### Windows
@@ -62,7 +114,7 @@ python -m pip install RealtimeSTT
 Install from a normal terminal or PowerShell session:
 
 ```powershell
-python -m pip install RealtimeSTT
+python -m pip install "RealtimeSTT[faster-whisper]"
 ```
 
 If a dependency needs a compiler on your machine, install the relevant wheel
@@ -75,30 +127,17 @@ RealtimeSTT can run on CPU with small models, but CUDA is strongly preferred
 for low-latency realtime transcription and larger Whisper-family models.
 
 Install the NVIDIA driver, CUDA runtime/toolkit, and cuDNN version that matches
-your PyTorch build. Then install a CUDA-enabled PyTorch and torchaudio wheel.
-For example:
+your PyTorch build. Then install a CUDA-enabled PyTorch and torchaudio wheel
+before installing RealtimeSTT, for example:
 
 ```bash
 python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+python -m pip install "RealtimeSTT[faster-whisper]"
 ```
 
 Use the PyTorch install selector for the exact command for your driver and CUDA
 version. Keep `device="cuda"` for GPU inference and use `device="cpu"` for CPU
 or CPU-only engine stacks.
-
-## Default Dependencies
-
-The current package install includes:
-
-- `faster-whisper` for the default transcription backend.
-- `PyAudio` for microphone input.
-- `webrtcvad-wheels`, `torch`, `torchaudio`, and `scipy` for VAD/audio paths.
-- `pvporcupine` and `openwakeword` for wake word support.
-- `websockets` and `websocket-client` for the packaged client/server tools.
-- `soundfile` for audio fixture and model-family paths.
-
-Future package extras are planned so users can install smaller engine-specific
-sets. Until extras exist, install optional engines explicitly.
 
 ## Optional Engine Dependencies
 
@@ -106,18 +145,41 @@ Install only the engine stack you plan to use:
 
 | Engine | Install command | Model handling |
 | --- | --- | --- |
-| `faster_whisper` | Included by default | Downloads CTranslate2 models automatically through faster-whisper. |
-| `whisper_cpp` | `python -m pip install pywhispercpp` | `pywhispercpp` can download known ggml models; local paths are also supported. |
-| `openai_whisper` | `python -m pip install openai-whisper` | Downloads OpenAI Whisper models automatically to its cache or `download_root`. |
-| `moonshine` | `python -m pip install transformers torch` | Downloads Hugging Face model files automatically. English-only in this adapter. |
-| `sherpa_onnx_*` | `python -m pip install sherpa-onnx` | Model bundles must be downloaded and extracted manually. |
-| `parakeet` | `python -m pip install -U "nemo_toolkit[asr]" soundfile` | NeMo downloads from the configured model id/cache. Best on Linux or WSL2. |
-| `granite_speech` | `python -m pip install transformers torch` | Downloads Hugging Face model files automatically. |
-| `qwen3_asr` | `python -m pip install -U qwen-asr` | Downloads Qwen model files through the Qwen ASR package. |
-| `cohere_transcribe` | `python -m pip install transformers torch` | Downloads Hugging Face model files; gated model access may be required. |
+| `faster_whisper` | `python -m pip install "RealtimeSTT[faster-whisper]"` | Downloads CTranslate2 models automatically through faster-whisper. |
+| `whisper_cpp` | `python -m pip install "RealtimeSTT[whisper-cpp]"` | `pywhispercpp` can download known ggml models; local paths are also supported. |
+| `openai_whisper` | `python -m pip install "RealtimeSTT[openai-whisper]"` | Downloads OpenAI Whisper models automatically to its cache or `download_root`. |
+| `moonshine` | `python -m pip install "RealtimeSTT[moonshine]"` | Downloads Hugging Face model files automatically. English-only in this adapter. |
+| `sherpa_onnx_*` | `python -m pip install "RealtimeSTT[sherpa-onnx]"` | Model bundles must be downloaded and extracted manually. |
+| `parakeet` | `python -m pip install -U "RealtimeSTT[parakeet]"` | NeMo downloads from the configured model id/cache. Best on Linux or WSL2. |
+| `granite_speech` | `python -m pip install "RealtimeSTT[granite]"` | Downloads Hugging Face model files automatically. |
+| `qwen3_asr` | `python -m pip install -U "RealtimeSTT[qwen]"` | Downloads Qwen model files through the Qwen ASR package. |
+| `cohere_transcribe` | `python -m pip install "RealtimeSTT[cohere]"` | Downloads Hugging Face model files; gated model access may be required. |
+| `kroko_onnx` | Install `kroko-onnx` from its upstream source repository | Download a Kroko `.data` model manually. |
 
 Per-engine setup lives in [transcription-engines.md](transcription-engines.md)
 and the `docs/engines/` pages.
+
+## Wake Word Dependencies
+
+Porcupine wake words:
+
+```bash
+python -m pip install "RealtimeSTT[porcupine]"
+```
+
+OpenWakeWord:
+
+```bash
+python -m pip install "RealtimeSTT[openwakeword]"
+```
+
+Both wake-word backends:
+
+```bash
+python -m pip install "RealtimeSTT[wakewords]"
+```
+
+Wake-word setup is documented in [wake-words.md](wake-words.md).
 
 ## FastAPI Server Dependencies
 
@@ -127,8 +189,13 @@ For the browser streaming server:
 python -m pip install -r example_fastapi_server/requirements.txt
 ```
 
-Then install the selected ASR engine stack. See
-[fastapi-server.md](fastapi-server.md).
+Then install the selected ASR engine stack, for example:
+
+```bash
+python -m pip install "RealtimeSTT[faster-whisper]"
+```
+
+See [fastapi-server.md](fastapi-server.md).
 
 ## Verifying The Install
 

@@ -856,7 +856,9 @@ class FastAPIMultiUserWebSocketTests(unittest.TestCase):
         with TestClient(app) as client:
             config = client.get("/api/config")
             self.assertEqual(config.status_code, 200)
-            self.assertIn("runtimeSettings", config.json())
+            config_body = config.json()
+            self.assertIn("runtimeSettings", config_body)
+            self.assertIn("kroko_onnx", config_body["supportedEngines"])
 
             update = client.patch(
                 "/api/config",

@@ -14,7 +14,10 @@ from example_fastapi_server.protocol import (
     require_positive_int,
 )
 from RealtimeSTT.audio_recorder import AudioToTextRecorder
-from RealtimeSTT.transcription_engines import TranscriptionResult
+from RealtimeSTT.transcription_engines import (
+    TranscriptionResult,
+    get_supported_transcription_engines,
+)
 from example_fastapi_server.server import (
     ConnectionManager,
     FairInferenceQueue,
@@ -120,6 +123,12 @@ class FastAPIServerProtocolTests(unittest.TestCase):
     def test_normalize_engine_name_handles_none(self):
         self.assertIsNone(normalize_engine_name(None))
         self.assertEqual(normalize_engine_name("Qwen3-ASR"), "qwen3_asr")
+
+    def test_supported_engines_include_kroko_for_fastapi_config(self):
+        engines = get_supported_transcription_engines()
+
+        for name in ("kroko_onnx", "kroko", "banafo_kroko"):
+            self.assertIn(name, engines)
 
     def test_segment_ids_replace_realtime_with_final(self):
         state = SegmentState()

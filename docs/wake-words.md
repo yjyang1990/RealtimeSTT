@@ -11,7 +11,11 @@ Wake word mode is enabled when `wake_words` is set or when
 
 ## Porcupine
 
-Porcupine is installed by the default RealtimeSTT requirements.
+Install the Porcupine extra before selecting this backend:
+
+```bash
+python -m pip install "RealtimeSTT[porcupine]"
+```
 
 ```python
 from RealtimeSTT import AudioToTextRecorder
@@ -57,8 +61,14 @@ recorder = AudioToTextRecorder(wake_words="jarvis,computer")
 
 ## OpenWakeWord
 
-OpenWakeWord is installed by the default RealtimeSTT requirements. Select it
-with `wakeword_backend="oww"` or `wakeword_backend="openwakeword"`.
+Install the OpenWakeWord extra before selecting this backend:
+
+```bash
+python -m pip install "RealtimeSTT[openwakeword]"
+```
+
+Select it with `wakeword_backend="oww"` or
+`wakeword_backend="openwakeword"`.
 
 ```python
 from RealtimeSTT import AudioToTextRecorder

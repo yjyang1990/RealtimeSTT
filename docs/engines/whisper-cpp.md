@@ -7,7 +7,7 @@ dependency surface than PyTorch-based engines.
 ## Install
 
 ```bash
-python -m pip install pywhispercpp
+python -m pip install "RealtimeSTT[whisper-cpp]"
 ```
 
 Then select the engine:
